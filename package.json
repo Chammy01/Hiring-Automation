@@ -6,7 +6,14 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "db:migrate": "node src/db/migrate.js",
+    "db:migrate:status": "node src/db/migrate.js --status",
+    "db:seed": "node src/db/seed.js",
+    "worker:gmail": "node src/workers/gmail-intake.js",
+    "worker:gmail:watch": "node src/workers/gmail-intake.js --watch",
+    "worker:parser": "node src/workers/doc-parser.js",
+    "worker:parser:watch": "node src/workers/doc-parser.js --watch"
   },
   "repository": {
     "type": "git",
@@ -27,6 +34,8 @@
     "googleapis": "^171.4.0",
     "mammoth": "^1.12.0",
     "pdf-parse": "^2.4.5",
+    "pg": "^8.20.0",
+    "tesseract.js": "^7.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

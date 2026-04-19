@@ -14,6 +14,8 @@ const { config } = require('./config');
 const { encryptText, decryptText } = require('./security');
 const { upsertCandidateSheetRows } = require('./integrations/googleSheets');
 const { classifyDocument } = require('./docClassifier');
+const { enqueueDispatch, sendDispatch, getDispatch, listDispatches } = require('./integrations/gmail-dispatcher');
+const { enqueueParsingJob, processParsingJob, getParsingJob, listParsingJobs, enrichCandidateFromFields } = require('./workers/doc-parser');
 
 function nowIso() {
   return new Date().toISOString();
@@ -48,9 +50,9 @@ function getIntegrationsStatus() {
       lastError: googleSheetsState.lastError || ''
     },
     upgrades: [
-      { key: 'gmail_dispatch', label: 'Gmail inbox + outbound dispatcher', status: 'planned' },
-      { key: 'postgres_storage', label: 'PostgreSQL persistence', status: 'planned' },
-      { key: 'ocr_pipeline', label: 'OCR + document parsing workers', status: 'planned' }
+      { key: 'gmail_dispatch', label: 'Gmail inbox + outbound dispatcher', status: config.gmailDispatchEnabled ? 'active' : 'configured' },
+      { key: 'postgres_storage', label: 'PostgreSQL persistence', status: config.postgresEnabled ? 'active' : 'configured' },
+      { key: 'ocr_pipeline', label: 'OCR + document parsing workers', status: config.ocrEnabled ? 'active' : 'configured' }
     ]
   };
 }
@@ -1112,6 +1114,85 @@ function updateAppSettings(updates = {}) {
   }).__result;
 }
 
+// ─── Gmail outbound dispatch service methods ──────────────────────────────────
+
+/**
+ * Queue an outbound email for delivery via the Gmail dispatcher.
+ * Falls back gracefully when GMAIL_DISPATCH_ENABLED is false.
+ *
+ * @param {object} opts  - see gmail-dispatcher.enqueueDispatch
+ * @returns {{ dispatch: object }}
+ */
+function queueOutboundDispatch(opts = {}) {
+  return enqueueDispatch(opts);
+}
+
+/**
+ * Attempt (or retry) sending a queued dispatch.
+ * @param {string} dispatchId
+ * @returns {Promise<object>}
+ */
+async function sendOutboundDispatch(dispatchId) {
+  return sendDispatch(dispatchId);
+}
+
+function getOutboundDispatch(id) {
+  return getDispatch(id);
+}
+
+function listOutboundDispatches(filters = {}) {
+  return listDispatches(filters);
+}
+
+// ─── Document parsing service methods ────────────────────────────────────────
+
+/**
+ * Enqueue a document parsing job for the async worker.
+ *
+ * @param {object} opts
+ * @param {string}  opts.candidateId
+ * @param {string}  opts.fileName
+ * @param {string}  [opts.mimeType]
+ * @param {string}  [opts.text]        - pre-extracted text (optional)
+ * @param {string}  [opts.storageRef]
+ * @returns {object} job record
+ */
+function queueDocumentParsing(opts = {}) {
+  return enqueueParsingJob(opts);
+}
+
+/**
+ * Process a parsing job immediately (synchronous in process).
+ * Suitable for API-triggered parsing in development/testing.
+ *
+ * @param {string} jobId
+ * @param {object} [runtimeOpts]
+ * @returns {Promise<object>}
+ */
+async function runDocumentParsing(jobId, runtimeOpts = {}) {
+  return processParsingJob(jobId, runtimeOpts);
+}
+
+function getDocumentParsingJob(id) {
+  return getParsingJob(id);
+}
+
+function listDocumentParsingJobs(filters = {}) {
+  return listParsingJobs(filters);
+}
+
+/**
+ * Apply parsing results to enrich a candidate's profile fields.
+ * @param {string} candidateId
+ * @param {object} fields  - structured fields from parsing result
+ * @param {string} confidence
+ */
+function applyCandidateEnrichment(candidateId, fields = {}, confidence = 'low') {
+  enrichCandidateFromFields(candidateId, fields, confidence);
+  triggerGoogleSheetsSync('candidate.enriched');
+  return readStore().candidates.find((c) => c.id === candidateId) || null;
+}
+
 module.exports = {
   createCandidateFromApplication,
   submitCandidateDocuments,
@@ -1148,5 +1229,15 @@ module.exports = {
   importBackup,
   getIntegrationsStatus,
   syncGoogleSheets,
-  WORKFLOW_STATES
+  // New: Gmail outbound dispatch
+  queueOutboundDispatch,
+  sendOutboundDispatch,
+  getOutboundDispatch,
+  listOutboundDispatches,
+  // New: Document parsing
+  queueDocumentParsing,
+  runDocumentParsing,
+  getDocumentParsingJob,
+  listDocumentParsingJobs,
+  applyCandidateEnrichment
 };
