@@ -37,7 +37,17 @@ const {
   exportBackup,
   importBackup,
   getIntegrationsStatus,
-  syncGoogleSheets
+  syncGoogleSheets,
+  // New modules
+  queueOutboundDispatch,
+  sendOutboundDispatch,
+  getOutboundDispatch,
+  listOutboundDispatches,
+  queueDocumentParsing,
+  runDocumentParsing,
+  getDocumentParsingJob,
+  listDocumentParsingJobs,
+  applyCandidateEnrichment
 } = require('./services');
 
 const app = express();
@@ -494,6 +504,144 @@ app.put('/api/settings', secureWrite('write:candidates'), (req, res) => {
   try {
     const updated = updateAppSettings(parsed.data);
     return res.json(updated);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+// ─── Gmail outbound dispatch endpoints ───────────────────────────────────────
+
+const dispatchSchema = z.object({
+  to: z.string().email(),
+  from: z.string().email().optional(),
+  subject: z.string().min(1),
+  body: z.string().min(1),
+  vars: z.record(z.string()).optional(),
+  templateKey: z.string().optional(),
+  candidateId: z.string().optional(),
+  maxRetries: z.number().int().nonnegative().optional()
+});
+
+// Trigger Gmail inbox sync (delegates to the gmail-intake worker)
+app.post('/api/mail/sync', secureWrite('write:candidates'), (_req, res) => {
+  res.json({
+    queued: true,
+    message: 'Gmail inbox sync is handled by the gmail-intake worker. ' +
+      'Run: node src/workers/gmail-intake.js (or pass --watch for continuous polling).',
+    gmailDispatchEnabled: config.gmailDispatchEnabled
+  });
+});
+
+// Queue an outbound email dispatch
+app.post('/api/mail/dispatch', secureWrite('write:candidates'), (req, res) => {
+  const parsed = dispatchSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const result = queueOutboundDispatch(parsed.data);
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+// Trigger send attempt for a queued dispatch
+app.post('/api/mail/dispatch/:id/send', secureWrite('write:candidates'), async (req, res) => {
+  try {
+    const dispatch = await sendOutboundDispatch(req.params.id);
+    return res.json(dispatch);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+// Check outbound dispatch status
+app.get('/api/mail/dispatch/:id', secure('read:candidates'), (req, res) => {
+  const dispatch = getOutboundDispatch(req.params.id);
+  if (!dispatch) {
+    return res.status(404).json({ error: 'Dispatch not found' });
+  }
+  return res.json(dispatch);
+});
+
+// List dispatches (with optional status filter)
+app.get('/api/mail/dispatches', secure('read:candidates'), (req, res) => {
+  const dispatches = listOutboundDispatches({
+    status: req.query.status,
+    candidateId: req.query.candidateId
+  });
+  return res.json({ items: dispatches });
+});
+
+// ─── Document parsing endpoints ───────────────────────────────────────────────
+
+const ingestDocSchema = z.object({
+  candidateId: z.string().min(1).optional(),
+  fileName: z.string().min(1),
+  mimeType: z.string().optional(),
+  text: z.string().optional(),
+  storageRef: z.string().optional(),
+  runNow: z.boolean().optional()
+});
+
+const enrichSchema = z.object({
+  fields: z.record(z.string()),
+  confidence: z.enum(['low', 'medium', 'high']).optional()
+});
+
+// Enqueue (or immediately run) a document parsing job
+app.post('/api/documents/ingest', secureWrite('write:candidates'), async (req, res) => {
+  const parsed = ingestDocSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const job = queueDocumentParsing(parsed.data);
+    if (parsed.data.runNow) {
+      const result = await runDocumentParsing(job.id);
+      return res.status(201).json({ job: result });
+    }
+    return res.status(201).json({ job });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+// Get parsing job status
+app.get('/api/documents/:jobId/status', secure('read:candidates'), (req, res) => {
+  const job = getDocumentParsingJob(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({ error: 'Parsing job not found' });
+  }
+  return res.json(job);
+});
+
+// List parsing jobs (filter by status or candidateId)
+app.get('/api/documents/parsing-jobs', secure('read:candidates'), (req, res) => {
+  const jobs = listDocumentParsingJobs({
+    status: req.query.status,
+    candidateId: req.query.candidateId
+  });
+  return res.json({ items: jobs });
+});
+
+// Enrich candidate from parsing result fields
+app.patch('/api/candidates/:id/enrich', secureWrite('write:candidates'), (req, res) => {
+  const parsed = enrichSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const candidate = applyCandidateEnrichment(
+      req.params.id,
+      parsed.data.fields,
+      parsed.data.confidence || 'low'
+    );
+    if (!candidate) {
+      return res.status(404).json({ error: 'Candidate not found' });
+    }
+    return res.json(candidate);
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }

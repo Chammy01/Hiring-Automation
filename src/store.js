@@ -34,6 +34,8 @@ const initialState = {
   retryQueue: [],
   extractionQueue: [],
   verificationQueue: [],
+  outboundDispatches: [],
+  parsingJobs: [],
   templates: { ...DEFAULT_TEMPLATES },
   settings: {
     scoringWeights: { ...SCORING_WEIGHTS },
@@ -60,6 +62,8 @@ function normalizeState(state = {}) {
     retryQueue: Array.isArray(state.retryQueue) ? state.retryQueue : [],
     extractionQueue: Array.isArray(state.extractionQueue) ? state.extractionQueue : [],
     verificationQueue: Array.isArray(state.verificationQueue) ? state.verificationQueue : [],
+    outboundDispatches: Array.isArray(state.outboundDispatches) ? state.outboundDispatches : [],
+    parsingJobs: Array.isArray(state.parsingJobs) ? state.parsingJobs : [],
     templates: {
       ...DEFAULT_TEMPLATES,
       ...(state.templates || {})

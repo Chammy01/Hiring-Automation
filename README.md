@@ -315,12 +315,223 @@ Restart the app and it will regenerate `data/store.json` automatically.
 - `GET /api/integrations`
 - `POST /api/integrations/google-sheets/sync`
 - `GET /api/backup` / `POST /api/restore`
+- **Gmail outbound dispatcher (new)**
+  - `POST /api/mail/sync` — trigger inbox sync info (runs via worker)
+  - `POST /api/mail/dispatch` — queue an outbound email
+  - `POST /api/mail/dispatch/:id/send` — trigger send for a queued dispatch
+  - `GET /api/mail/dispatch/:id` — check dispatch status
+  - `GET /api/mail/dispatches` — list all dispatches (`?status=queued|sent|failed&candidateId=`)
+- **Document parsing / OCR (new)**
+  - `POST /api/documents/ingest` — enqueue (or immediately run) a parsing job
+  - `GET /api/documents/:jobId/status` — get parsing job status and extracted fields
+  - `GET /api/documents/parsing-jobs` — list jobs (`?status=queued|succeeded|failed&candidateId=`)
+  - `PATCH /api/candidates/:id/enrich` — apply parsed fields to a candidate record
 
-## Next Integration Upgrades
-- Plug Gmail API/IMAP+SMTP transport behind queue dispatcher.
-- Replace JSON store with PostgreSQL.
-- Add OCR adapters (Tesseract + PDF parser) to extraction job workers.
-- Add Ollama summary endpoint for recommendation explanation enrichment.
+---
+
+## New Modules — Local Setup
+
+### Module A: Gmail outbound dispatcher
+
+The dispatcher sends emails via the Gmail API using the same OAuth token as the
+intake worker. It is **disabled by default** so the rest of the app works without
+any Gmail configuration.
+
+#### Enable
+
+1. Complete the Gmail OAuth setup described in [Gmail OAuth Ingestion Worker](#gmail-oauth-ingestion-worker-local).
+2. Add to `.env`:
+
+   ```env
+   GMAIL_DISPATCH_ENABLED=true
+   GMAIL_CREDENTIALS_PATH=credentials.json   # same file as intake worker
+   GMAIL_TOKEN_PATH=data/gmail-token.json
+   GMAIL_DISPATCH_FROM=hr@your-domain.com
+   GMAIL_DISPATCH_MAX_RETRIES=3
+   GMAIL_DISPATCH_RETRY_BASE_MS=1000
+   ```
+
+3. Queue and send a test dispatch:
+
+   ```bash
+   curl -s -X POST http://localhost:3000/api/mail/dispatch \
+     -H "Content-Type: application/json" \
+     -H "x-role: hr" \
+     -d '{"to":"candidate@example.com","subject":"Test {{role}}","body":"Hello, your application for {{role}} was received.","vars":{"role":"Software Engineer"}}'
+
+   # Note the returned dispatch id, then trigger send:
+   curl -s -X POST http://localhost:3000/api/mail/dispatch/<id>/send -H "x-role: hr"
+   ```
+
+#### How dispatches work
+
+1. `POST /api/mail/dispatch` creates a record with `status: queued`.
+2. `POST /api/mail/dispatch/:id/send` attempts delivery via Gmail API.
+3. On transient failure (network, rate-limit, 5xx), it retries with exponential
+   back-off up to `GMAIL_DISPATCH_MAX_RETRIES` attempts.
+4. Final status is `sent` (with `sentAt`) or `failed` (with `lastError`).
+5. When `GMAIL_DISPATCH_ENABLED=false`, sends are **simulated** — status moves to
+   `sent` immediately with no real email sent.
+
+---
+
+### Module B: PostgreSQL persistence
+
+The app defaults to a local JSON file store (`data/store.json`) with zero setup.
+PostgreSQL is an **opt-in upgrade** controlled by `POSTGRES_ENABLED=true`.
+
+#### Prerequisites
+
+- PostgreSQL 14+ (local, Docker, or a hosted service such as Render, Neon, Supabase, or Railway)
+
+#### Enable
+
+1. Create a database:
+
+   ```sql
+   CREATE DATABASE hiring_automation;
+   ```
+
+2. Add connection details to `.env`:
+
+   ```env
+   POSTGRES_ENABLED=true
+   POSTGRES_URL=postgres://user:password@localhost:5432/hiring_automation
+   # Or individual fields:
+   # POSTGRES_HOST=localhost
+   # POSTGRES_PORT=5432
+   # POSTGRES_DB=hiring_automation
+   # POSTGRES_USER=postgres
+   # POSTGRES_PASSWORD=your_password
+   POSTGRES_SSL=false   # set true for hosted DBs (Neon, RDS, etc.)
+   ```
+
+3. Run migrations:
+
+   ```bash
+   npm run db:migrate
+   ```
+
+   Check status at any time:
+
+   ```bash
+   npm run db:migrate:status
+   ```
+
+4. (Optional) Load dev seed data:
+
+   ```bash
+   npm run db:seed
+   ```
+
+#### Schema overview
+
+| Table | Purpose |
+|---|---|
+| `candidates` | Candidate profiles and workflow state |
+| `jobs` | Open positions |
+| `applications` | Candidate–job linkage |
+| `email_threads` | Gmail thread metadata |
+| `email_messages` | Normalized inbound/outbound messages (deduplicated by provider_message_id) |
+| `outbound_dispatches` | Outbound send queue and delivery tracking |
+| `documents` | Uploaded/stored document references |
+| `parsing_results` | Extracted raw text + structured fields per document |
+| `worker_jobs` | General-purpose async job queue |
+| `schema_migrations` | Applied migration tracking |
+
+Indexes are included for the most common access patterns: email lookup,
+candidate position/workflow filtering, queue processing by status, and
+`created_at` ordering.
+
+#### Troubleshooting
+
+- **`POSTGRES_ENABLED is not true`** — set `POSTGRES_ENABLED=true` in `.env`
+- **Connection refused** — check host, port, and that PostgreSQL is running
+- **SSL required** — set `POSTGRES_SSL=true` for hosted databases
+- **Permission denied** — ensure the user has `CREATE TABLE` permissions on the database
+
+---
+
+### Module C: OCR + document parsing workers
+
+The async worker parses uploaded/stored documents into structured candidate fields.
+It works **without OCR** out of the box (PDF text extraction and DOCX parsing).
+Tesseract OCR is an optional upgrade for image-only PDFs and image files.
+
+#### Enable
+
+```env
+OCR_ENABLED=true           # enables Tesseract OCR fallback
+OCR_WORKER_CONCURRENCY=2   # parallel jobs
+OCR_WORKER_POLL_MS=5000    # polling interval in watch mode
+```
+
+No extra Tesseract binary is required — the `tesseract.js` package uses a
+JavaScript WASM build that works on any Node.js platform.
+
+#### Run the parser worker
+
+```bash
+# Single pass (process all queued jobs and exit)
+npm run worker:parser
+
+# Watch mode (poll continuously)
+npm run worker:parser:watch
+```
+
+#### Ingest a document via API
+
+```bash
+# Enqueue a parsing job (worker processes it asynchronously)
+curl -s -X POST http://localhost:3000/api/documents/ingest \
+  -H "Content-Type: application/json" \
+  -H "x-role: hr" \
+  -d '{"candidateId":"<uuid>","fileName":"resume.pdf","mimeType":"application/pdf","storageRef":"/uploads/resume.pdf"}'
+
+# Enqueue AND process immediately (runNow=true — useful in development)
+curl -s -X POST http://localhost:3000/api/documents/ingest \
+  -H "Content-Type: application/json" \
+  -H "x-role: hr" \
+  -d '{"candidateId":"<uuid>","fileName":"cv.txt","mimeType":"text/plain","text":"Alice Smith\nalice@example.com\n5 years experience...","runNow":true}'
+
+# Poll for result
+curl -s http://localhost:3000/api/documents/<jobId>/status -H "x-role: viewer"
+```
+
+#### Parsed fields
+
+| Field | Source |
+|---|---|
+| `name` | "Name:" label or first plausible line |
+| `email` | Regex match |
+| `phone` | Philippine / international number pattern |
+| `educationalAttainment` | Keyword matching (Doctorate / Graduate School / College / Senior High / High School) |
+| `workExperience` | `N years experience` pattern |
+| `cscEligibility` | Civil Service exam / PRC keywords |
+| `awards` | `cum laude`, `award`, `honor` keywords |
+| `trainings` | `training`, `seminar`, `workshop` keywords |
+| `skills` | Curated keyword list (MS Office, data entry, leadership, etc.) |
+
+Confidence is rated `low / medium / high` based on how many fields are found.
+Candidates with `medium` or `low` confidence are added to the verification queue
+for human review.
+
+#### Apply parsing results to a candidate
+
+```bash
+curl -s -X PATCH http://localhost:3000/api/candidates/<id>/enrich \
+  -H "Content-Type: application/json" \
+  -H "x-role: hr" \
+  -d '{"fields":{"educationalAttainment":"College Graduate","workExperience":"1-3 years"},"confidence":"medium"}'
+```
+
+#### Troubleshooting
+
+- **OCR produces garbled text** — ensure the image is at least 150 dpi; rotate if needed
+- **PDF yields empty text** — PDF may be image-only; set `OCR_ENABLED=true`
+- **Job stuck in `processing`** — worker may have crashed; restart it — the job
+  will retry up to `maxRetries` attempts
+
 
 ---
 
