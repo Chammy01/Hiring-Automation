@@ -1,0 +1,162 @@
+{
+  "candidates": [
+    {
+      "id": "9cccc26d-fea3-4ab8-a181-bfb6184a4252",
+      "fullName": "John Smith",
+      "email": "john@example.com",
+      "position": "Administrative Aide IV (Clerk II)",
+      "workflowState": "Rejected",
+      "statusOfApplication": "Disqualified",
+      "documentStatus": {
+        "Letter of Intent": "received",
+        "PDS": "received",
+        "WES": "received",
+        "Training/Seminar Certificates": "missing",
+        "Awards from Last Promotion": "missing",
+        "Latest IPCR": "missing",
+        "Proof of CSC Eligibility": "missing"
+      },
+      "requiredDocuments": [
+        "Letter of Intent",
+        "PDS",
+        "WES",
+        "Training/Seminar Certificates",
+        "Awards from Last Promotion",
+        "Latest IPCR",
+        "Proof of CSC Eligibility"
+      ],
+      "compliance": {
+        "subjectFormatValid": false,
+        "submittedBeforeDeadline": true,
+        "disqualified": true,
+        "reasons": [
+          "Invalid subject format. Expected \"Application for Administrative Aide IV (Clerk II)\""
+        ]
+      },
+      "educationalAttainment": "Unknown",
+      "workExperience": "Unknown",
+      "awards": "None submitted",
+      "trainings": "None submitted",
+      "cscEligibility": "Unknown",
+      "specialNote": "Invalid subject format. Expected \"Application for Administrative Aide IV (Clerk II)\"",
+      "link": "",
+      "emailSent": true,
+      "confirmedAttendance": false,
+      "extractionConfidence": "low",
+      "recommendation": {
+        "score": 0,
+        "reason": "Not scored yet",
+        "rankLabel": "Unranked",
+        "breakdown": {}
+      },
+      "interviewSchedule": null,
+      "createdAt": "2026-04-19T03:11:51.180Z",
+      "updatedAt": "2026-04-19T03:11:51.180Z"
+    }
+  ],
+  "emailEvents": [
+    {
+      "id": "9b351fbb-06f2-4454-ae83-bfe7738c17fc",
+      "timestamp": "2026-04-19T03:11:51.180Z",
+      "candidateId": "9cccc26d-fea3-4ab8-a181-bfb6184a4252",
+      "direction": "outbound",
+      "subject": "Application Received: Administrative Aide IV (Clerk II)",
+      "body": "Dear Applicant,\n\nThank you for your interest in applying to our Office.\n\nIn view that the position you are applying for is a regular position, you are hereby requested to submit the following documentary requirements on or before 07 April 2026:\n\n• Letter of Intent\n• One (1) copy of a fully accomplished Personal Data Sheet (PDS) and Work Experience Sheet (WES) (CSC Form No. 212, s. 2025)\n(Forms may be downloaded from the Civil Service Commission website)\n• One (1) copy of relevant training/seminar certificates (if applicable)\n• One (1) copy of awards received from your last promotion (if applicable)\n• One (1) copy of your latest Individual Performance Commitment and Review (IPCR) (if applicable)\n• One (1) copy of proof of CSC Eligibility\n \nKindly submit the above documents through email using the prescribed subject format:\n\nApplication for (Position and Title)\n(ex: Application for Administrative Assistant I (Computer Operator I))\n\nPlease be advised that non-compliance with the required documents, failure to follow the prescribed subject format, or submission beyond the stated deadline shall result in automatic disqualification from the selection process.\n\nThis is an automated reminder. If this has already been taken care of, please disregard. We kindly ask that you reply to acknowledge receipt of this message.\n\nThank you.\nVery truly yours,",
+      "status": "sent"
+    }
+  ],
+  "auditLogs": [
+    {
+      "id": "46c98d9e-c189-4719-a52a-93472fb99e47",
+      "timestamp": "2026-04-19T03:11:51.180Z",
+      "action": "candidate.created",
+      "candidateId": "9cccc26d-fea3-4ab8-a181-bfb6184a4252",
+      "metadata": {
+        "source": "email_intake"
+      }
+    },
+    {
+      "id": "10465706-6c91-414b-b0de-253cc09160ab",
+      "timestamp": "2026-04-19T03:11:51.180Z",
+      "action": "email.ack_sent",
+      "candidateId": "9cccc26d-fea3-4ab8-a181-bfb6184a4252",
+      "metadata": {
+        "subject": "Application Received: Administrative Aide IV (Clerk II)"
+      }
+    },
+    {
+      "id": "524bbf25-8cc7-4100-b4b2-d4727a0d8d74",
+      "timestamp": "2026-04-19T03:11:51.180Z",
+      "action": "candidate.documents_submitted",
+      "candidateId": "9cccc26d-fea3-4ab8-a181-bfb6184a4252",
+      "metadata": {
+        "attachments": [
+          "letter_of_intent.pdf",
+          "pds.pdf",
+          "wes.pdf"
+        ],
+        "compliance": {
+          "subjectFormatValid": false,
+          "submittedBeforeDeadline": true,
+          "disqualified": true,
+          "reasons": [
+            "Invalid subject format. Expected \"Application for Administrative Aide IV (Clerk II)\""
+          ]
+        }
+      }
+    }
+  ],
+  "__result": {
+    "id": "9cccc26d-fea3-4ab8-a181-bfb6184a4252",
+    "fullName": "John Smith",
+    "email": "john@example.com",
+    "position": "Administrative Aide IV (Clerk II)",
+    "workflowState": "Rejected",
+    "statusOfApplication": "Disqualified",
+    "documentStatus": {
+      "Letter of Intent": "received",
+      "PDS": "received",
+      "WES": "received",
+      "Training/Seminar Certificates": "missing",
+      "Awards from Last Promotion": "missing",
+      "Latest IPCR": "missing",
+      "Proof of CSC Eligibility": "missing"
+    },
+    "requiredDocuments": [
+      "Letter of Intent",
+      "PDS",
+      "WES",
+      "Training/Seminar Certificates",
+      "Awards from Last Promotion",
+      "Latest IPCR",
+      "Proof of CSC Eligibility"
+    ],
+    "compliance": {
+      "subjectFormatValid": false,
+      "submittedBeforeDeadline": true,
+      "disqualified": true,
+      "reasons": [
+        "Invalid subject format. Expected \"Application for Administrative Aide IV (Clerk II)\""
+      ]
+    },
+    "educationalAttainment": "Unknown",
+    "workExperience": "Unknown",
+    "awards": "None submitted",
+    "trainings": "None submitted",
+    "cscEligibility": "Unknown",
+    "specialNote": "Invalid subject format. Expected \"Application for Administrative Aide IV (Clerk II)\"",
+    "link": "",
+    "emailSent": true,
+    "confirmedAttendance": false,
+    "extractionConfidence": "low",
+    "recommendation": {
+      "score": 0,
+      "reason": "Not scored yet",
+      "rankLabel": "Unranked",
+      "breakdown": {}
+    },
+    "interviewSchedule": null,
+    "createdAt": "2026-04-19T03:11:51.180Z",
+    "updatedAt": "2026-04-19T03:11:51.180Z"
+  }
+}

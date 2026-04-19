@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hiring Automation Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Hiring Automation Dashboard</h1>
+
+      <section class="card">
+        <h2>New Application Intake</h2>
+        <form id="intake-form">
+          <label>Full Name <input name="fullName" required /></label>
+          <label>Email <input name="email" type="email" required /></label>
+          <label>Position <input name="position" required /></label>
+          <button type="submit">Register Candidate</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Candidate Pipeline</h2>
+        <button id="refresh">Refresh</button>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Position</th>
+              <th>Workflow</th>
+              <th>Score</th>
+              <th>Recommendation</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="candidate-rows"></tbody>
+        </table>
+      </section>
+
+      <section class="card" id="details"></section>
+    </main>
+    <script src="/script.js"></script>
+  </body>
+</html>
