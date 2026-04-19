@@ -62,17 +62,40 @@ Open-source hiring workflow automation with intake, compliance validation, extra
 - UI: Vanilla HTML/CSS/JS
 - Security primitives: Node crypto (AES-256-GCM)
 
-## Run
+## Complete Local Setup Guide (Step-by-Step)
+
+Follow these steps to run the full system on your own computer.
+
+### 1) Install prerequisites
+
+- **Git** (latest stable)
+- **Node.js 20+** (Node 22+ recommended)
+- **npm** (comes with Node.js)
+
+Check versions:
+
+```bash
+git --version
+node --version
+npm --version
+```
+
+### 2) Clone the repository
+
+```bash
+git clone https://github.com/Chammy01/Hiring-Automation.git
+cd Hiring-Automation
+```
+
+### 3) Install project dependencies
 
 ```bash
 npm install
-npm test
-npm run start
 ```
 
-Open: `http://localhost:3000`
+### 4) Create your `.env` file
 
-## Environment Variables
+Create a file named `.env` in the project root:
 
 ```bash
 PORT=3000
@@ -82,15 +105,100 @@ FROM_EMAIL=hr@company.local
 MAILBOX_ADDRESS=applications@company.local
 HR_API_KEY=
 ROLE_HEADER=x-role
-ENCRYPTION_KEY=dev-local-encryption-key-change-this-dev-local-encryption-key
+ENCRYPTION_KEY=replace-with-your-own-long-random-secret
 ```
 
-## Role Usage
+Recommended: use a unique `ENCRYPTION_KEY` per machine/environment.
+
+### 5) Run tests (sanity check)
+
+```bash
+npm test
+```
+
+### 6) Start the server
+
+```bash
+npm run start
+```
+
+For live reload during development:
+
+```bash
+npm run dev
+```
+
+### 7) Verify the app is running
+
+- Open the dashboard: `http://localhost:3000`
+- Health endpoint:
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+Expected response:
+
+```json
+{"status":"ok","service":"hiring-automation"}
+```
+
+### 8) Use the app from UI
+
+1. Open dashboard at `http://localhost:3000`
+2. In **New Application Intake**, create a candidate
+3. In **Candidate Pipeline**, use actions:
+   - **Score**
+   - **Shortlist**
+   - **Follow-up**
+   - **Interview**
+4. Check operational metrics in **Operations Visibility**
+
+### 9) Use secured APIs (when testing with curl/Postman)
 
 Set role header in requests:
 - `x-role: viewer` → read-only dashboard/candidate views
 - `x-role: hr` → operational actions
 - `x-role: admin` → full permissions
+
+If `HR_API_KEY` is set, also send:
+- `x-api-key: <your-key>`
+
+Example intake call:
+
+```bash
+curl -X POST http://localhost:3000/api/applications/intake \
+  -H "Content-Type: application/json" \
+  -H "x-role: hr" \
+  -d '{
+    "fullName":"Jane Doe",
+    "email":"jane@example.com",
+    "position":"Administrative Aide IV (Clerk II)"
+  }'
+```
+
+### 10) Reset local data (fresh start)
+
+Stop the server, then clear datastore:
+
+```bash
+rm -f data/store.json
+```
+
+Restart the app and it will regenerate `data/store.json` automatically.
+
+### 11) Troubleshooting
+
+- **Port already in use**
+  - Change `PORT` in `.env` (for example `PORT=3001`) and restart
+- **Module not found**
+  - Run `npm install` again
+- **403 Forbidden**
+  - Check `x-role` value; use `hr` or `admin` for write operations
+- **401 Unauthorized**
+  - If `HR_API_KEY` is configured, include correct `x-api-key`
+- **Corrupt/invalid local data file**
+  - Delete `data/store.json` and restart
 
 ## Key API Endpoints
 
