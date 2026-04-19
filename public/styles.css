@@ -1,89 +1,244 @@
-body {
-  margin: 0;
-  font-family: Inter, Arial, sans-serif;
-  background: #f6f7fb;
-  color: #1f2937;
+:root {
+  color-scheme: light;
+  --bg: #f1f5f9;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --success: #16a34a;
 }
 
-main {
-  max-width: 1100px;
-  margin: 24px auto;
-  padding: 0 12px;
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, 'Segoe UI', sans-serif;
+  background: radial-gradient(circle at top, #e2e8f0, var(--bg) 40%);
+  color: var(--text);
+}
+
+.dashboard-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 16px 40px;
+}
+
+.page-header {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 h1 {
-  margin-bottom: 18px;
+  margin: 4px 0;
+  font-size: 30px;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  gap: 14px;
+}
+
+.two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
   margin-bottom: 14px;
 }
 
-form {
+.card h2 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 18px;
+}
+
+.form-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   gap: 10px;
   align-items: end;
 }
 
 label {
-  font-size: 13px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
 }
 
-input,
-button {
-  border-radius: 8px;
+input {
   border: 1px solid #cbd5e1;
-  padding: 8px;
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 14px;
+  color: var(--text);
+  background: #fff;
 }
 
-button {
+input:focus {
+  outline: 2px solid #bfdbfe;
+  border-color: #60a5fa;
+}
+
+.btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 600;
   cursor: pointer;
-  background: #1d4ed8;
+  background: var(--primary);
   color: #fff;
+  transition: background 0.15s ease;
+}
+
+.btn:hover {
+  background: var(--primary-hover);
+}
+
+.btn-secondary {
+  background: #0f172a;
+}
+
+.btn-secondary:hover {
+  background: #1e293b;
+}
+
+.filters,
+.interview-defaults {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.table-wrap {
+  overflow-x: auto;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 10px;
+  min-width: 720px;
 }
 
 th,
 td {
-  padding: 8px;
-  border-bottom: 1px solid #e5e7eb;
   text-align: left;
   font-size: 13px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .actions button {
   font-size: 12px;
-  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #f8fafc;
+  color: #0f172a;
+  cursor: pointer;
 }
 
-.interview-defaults {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
+.actions button:hover {
+  background: #e2e8f0;
 }
 
-.filters {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metric {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.metric p {
+  margin: 0;
+}
+
+.metric .value {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.integration-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+  background: #f8fafc;
+}
+
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.pill.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.pill.warn {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+@media (max-width: 960px) {
+  .two-col,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header {
+    flex-direction: column;
+  }
 }

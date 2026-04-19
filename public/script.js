@@ -1,11 +1,15 @@
 const candidateRows = document.getElementById('candidate-rows');
 const details = document.getElementById('details');
 const opsMetrics = document.getElementById('ops-metrics');
+const integrationStatus = document.getElementById('integration-status');
 const interviewDateInput = document.getElementById('interview-date');
 const interviewTimeInput = document.getElementById('interview-time');
 const interviewVenueInput = document.getElementById('interview-venue');
 const filterPositionInput = document.getElementById('filter-position');
 const filterStatusInput = document.getElementById('filter-status');
+const syncGoogleSheetsButton = document.getElementById('sync-google-sheets');
+
+let currentCandidates = [];
 
 const today = new Date().toISOString().slice(0, 10);
 if (!interviewDateInput.value) interviewDateInput.value = today;
@@ -26,20 +30,56 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+function statusPill(isOk, fallback = 'pending') {
+  if (isOk === true) return '<span class="pill ok">ready</span>';
+  if (isOk === false) return '<span class="pill warn">attention</span>';
+  return `<span class="pill">${fallback}</span>`;
+}
+
+function renderIntegrationStatus(data) {
+  const googleSheets = data.googleSheets || {};
+  integrationStatus.innerHTML = `
+    <div class="integration-item">
+      <p><b>Google Sheets</b> ${statusPill(googleSheets.enabled && googleSheets.configured)}</p>
+      <p>Enabled: ${googleSheets.enabled ? 'Yes' : 'No'}</p>
+      <p>Configured: ${googleSheets.configured ? 'Yes' : 'No'}</p>
+      <p>Auto-create sheet: ${googleSheets.autoCreateSpreadsheet ? 'Yes' : 'No'}</p>
+      <p>Spreadsheet: ${
+        googleSheets.spreadsheetUrl
+          ? `<a href="${googleSheets.spreadsheetUrl}" target="_blank" rel="noreferrer">Open Google Sheet</a>`
+          : 'Not created yet'
+      }</p>
+      <p>Last Sync: ${googleSheets.lastSyncedAt || 'Never'}</p>
+      <p>${googleSheets.lastError ? `Last Error: ${googleSheets.lastError}` : 'Last Error: None'}</p>
+    </div>
+    ${data.upgrades
+      .map(
+        (upgrade) => `
+      <div class="integration-item">
+        <p><b>${upgrade.label}</b> ${statusPill(null, upgrade.status)}</p>
+      </div>`
+      )
+      .join('')}
+  `;
+}
+
 async function loadOps() {
-  const [dashboard, analytics, retry] = await Promise.all([
+  const [dashboard, analytics, retry, integrations] = await Promise.all([
     api('/api/dashboard'),
     api('/api/analytics'),
-    api('/api/retry-queue')
+    api('/api/retry-queue'),
+    api('/api/integrations')
   ]);
 
   opsMetrics.innerHTML = `
-    <p><b>Total candidates:</b> ${dashboard.totals.candidates}</p>
-    <p><b>Retry queue:</b> ${dashboard.totals.retryQueue} (${retry.items.filter((x) => x.status === 'pending').length} pending)</p>
-    <p><b>Verification queue:</b> ${dashboard.totals.verificationQueue}</p>
-    <p><b>Completion rate:</b> ${analytics.rates.completionRate}%</p>
-    <p><b>Average processing time:</b> ${analytics.averageProcessingHours} hours</p>
+    <article class="metric"><p>Total candidates</p><p class="value">${dashboard.totals.candidates}</p></article>
+    <article class="metric"><p>Pending retries</p><p class="value">${retry.items.filter((x) => x.status === 'pending').length}</p></article>
+    <article class="metric"><p>Verification queue</p><p class="value">${dashboard.totals.verificationQueue}</p></article>
+    <article class="metric"><p>Completion rate</p><p class="value">${analytics.rates.completionRate}%</p></article>
+    <article class="metric"><p>Average processing</p><p class="value">${analytics.averageProcessingHours}h</p></article>
   `;
+
+  renderIntegrationStatus(integrations);
 }
 
 function createActionButton(action, id, label) {
@@ -52,10 +92,12 @@ async function loadCandidates() {
   if (filterStatusInput.value.trim()) params.set('status', filterStatusInput.value.trim());
 
   const data = await api(`/api/candidates?${params.toString()}`);
+  currentCandidates = data.items;
   candidateRows.innerHTML = '';
 
   for (const candidate of data.items) {
     const row = document.createElement('tr');
+    row.dataset.candidateId = candidate.id;
     row.innerHTML = `
       <td>${candidate.fullName}</td>
       <td>${candidate.position}</td>
@@ -84,7 +126,9 @@ async function loadDetails(id) {
     <p><b>Documents:</b> ${Object.entries(candidate.documentStatus)
       .map(([k, v]) => `${k}: ${v}`)
       .join(' | ')}</p>
-    <p><b>Compliance:</b> ${candidate.compliance.disqualified ? `Disqualified (${candidate.compliance.reasons.join('; ')})` : 'Compliant'}</p>
+    <p><b>Compliance:</b> ${
+      candidate.compliance.disqualified ? `Disqualified (${candidate.compliance.reasons.join('; ')})` : 'Compliant'
+    }</p>
     <p><b>Recommendation:</b> ${candidate.recommendation.reason}</p>
   `;
 }
@@ -95,6 +139,18 @@ async function reloadAll() {
 
 document.getElementById('refresh').addEventListener('click', () => {
   reloadAll().catch((error) => alert(error.message));
+});
+
+syncGoogleSheetsButton.addEventListener('click', async () => {
+  try {
+    syncGoogleSheetsButton.disabled = true;
+    await api('/api/integrations/google-sheets/sync', { method: 'POST' });
+    await loadOps();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    syncGoogleSheetsButton.disabled = false;
+  }
 });
 
 filterPositionInput.addEventListener('input', () => {
@@ -126,6 +182,13 @@ document.getElementById('intake-form').addEventListener('submit', async (event) 
 
 candidateRows.addEventListener('click', async (event) => {
   const button = event.target.closest('button');
+  const row = event.target.closest('tr');
+
+  if (!button && row && row.dataset.candidateId) {
+    loadDetails(row.dataset.candidateId).catch(() => {});
+    return;
+  }
+
   if (!button) return;
 
   const id = button.dataset.id;
@@ -152,15 +215,6 @@ candidateRows.addEventListener('click', async (event) => {
     await loadDetails(id);
   } catch (error) {
     alert(error.message);
-  }
-});
-
-candidateRows.addEventListener('mouseover', (event) => {
-  const row = event.target.closest('tr');
-  if (!row) return;
-  const button = row.querySelector('button[data-id]');
-  if (button) {
-    loadDetails(button.dataset.id).catch(() => {});
   }
 });
 

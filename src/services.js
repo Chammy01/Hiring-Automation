@@ -12,9 +12,112 @@ const {
 } = require('./constants');
 const { config } = require('./config');
 const { encryptText, decryptText } = require('./security');
+const { upsertCandidateSheetRows } = require('./integrations/googleSheets');
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function getGoogleSheetsState(state = readStore()) {
+  return (((state.settings || {}).integrations || {}).googleSheets || {});
+}
+
+function getIntegrationsStatus() {
+  const state = readStore();
+  const googleSheetsState = getGoogleSheetsState(state);
+  const spreadsheetId = googleSheetsState.spreadsheetId || config.googleSheetsSpreadsheetId;
+  const spreadsheetUrl =
+    googleSheetsState.spreadsheetUrl ||
+    (spreadsheetId ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}` : '');
+  return {
+    googleSheets: {
+      enabled: config.googleSheetsEnabled,
+      configured: Boolean(config.googleSheetsCredentialsJson),
+      spreadsheetId,
+      spreadsheetUrl,
+      autoCreateSpreadsheet: !spreadsheetId,
+      lastSyncedAt: googleSheetsState.lastSyncedAt || '',
+      lastError: googleSheetsState.lastError || ''
+    },
+    upgrades: [
+      { key: 'gmail_dispatch', label: 'Gmail inbox + outbound dispatcher', status: 'planned' },
+      { key: 'postgres_storage', label: 'PostgreSQL persistence', status: 'planned' },
+      { key: 'ocr_pipeline', label: 'OCR + document parsing workers', status: 'planned' }
+    ]
+  };
+}
+
+function toSheetRowsFromCandidates(candidates = []) {
+  return candidates.map((candidate) => ({
+    'Name of Applicant': candidate.fullName,
+    'Position Applying For': candidate.position,
+    'Status of Application': candidate.statusOfApplication,
+    'Letter of Intent': candidate.documentStatus['Letter of Intent'] === 'received',
+    PDS: candidate.documentStatus.PDS === 'received',
+    WES: candidate.documentStatus.WES === 'received',
+    'Educational Attainment': candidate.educationalAttainment,
+    'Work Experience': candidate.workExperience,
+    Awards: candidate.awards,
+    Trainings: candidate.trainings,
+    CSC: candidate.cscEligibility,
+    'Email Address': candidate.email,
+    Status: candidate.workflowState,
+    Link: candidate.link,
+    'Special Note': candidate.specialNote,
+    'Email sent': candidate.emailSent,
+    'Confirmed attendance': candidate.confirmedAttendance,
+    'System Score': candidate.recommendation.score,
+    Recommendation: candidate.recommendation.rankLabel
+  }));
+}
+
+async function syncGoogleSheets(reason = 'manual') {
+  if (!config.googleSheetsEnabled) {
+    return { synced: false, reason: 'Google Sheets integration is disabled' };
+  }
+
+  const snapshot = readStore();
+  const googleSheetsState = getGoogleSheetsState(snapshot);
+  const currentSpreadsheetId = googleSheetsState.spreadsheetId || config.googleSheetsSpreadsheetId || '';
+  const rows = toSheetRowsFromCandidates(snapshot.candidates || []);
+
+  try {
+    const result = await upsertCandidateSheetRows({
+      rows,
+      spreadsheetId: currentSpreadsheetId,
+      spreadsheetTitle: config.googleSheetsTitle
+    });
+    updateStore((state) => {
+      state.settings.integrations.googleSheets = {
+        ...state.settings.integrations.googleSheets,
+        spreadsheetId: result.spreadsheetId,
+        spreadsheetUrl: result.spreadsheetUrl,
+        lastSyncedAt: nowIso(),
+        lastError: ''
+      };
+      addAuditLog(state, 'integration.google_sheets_synced', null, { reason, rowCount: rows.length });
+      return state;
+    });
+    return { synced: true, spreadsheetId: result.spreadsheetId, spreadsheetUrl: result.spreadsheetUrl };
+  } catch (error) {
+    updateStore((state) => {
+      state.settings.integrations.googleSheets = {
+        ...state.settings.integrations.googleSheets,
+        lastError: error.message,
+        lastSyncedAt: state.settings.integrations.googleSheets.lastSyncedAt || ''
+      };
+      addAuditLog(state, 'integration.google_sheets_sync_failed', null, { reason, error: error.message });
+      return state;
+    });
+    return { synced: false, error: error.message };
+  }
+}
+
+function triggerGoogleSheetsSync(reason) {
+  if (!config.googleSheetsEnabled) {
+    return;
+  }
+  void syncGoogleSheets(reason);
 }
 
 function normalize(value) {
@@ -117,7 +220,7 @@ function findCandidateByIdentity(state, fullName, email, position) {
 
 function createCandidateFromApplication(payload) {
   const receivedAt = payload.receivedAt ? new Date(payload.receivedAt) : new Date();
-  return updateStore((state) => {
+  const result = updateStore((state) => {
     const duplicate = findCandidateByIdentity(state, payload.fullName, payload.email, payload.position);
     if (duplicate) {
       addAuditLog(state, 'candidate.duplicate_skipped', duplicate.id, {
@@ -187,6 +290,8 @@ function createCandidateFromApplication(payload) {
     state.__result = { duplicate: false, candidate, ackStatus: event.status };
     return state;
   }).__result;
+  triggerGoogleSheetsSync('candidate.created');
+  return result;
 }
 
 function attachmentMatchesDoc(attachment, docName) {
@@ -227,7 +332,7 @@ function applyCompliance(candidate, submittedAt, subject) {
 }
 
 function submitCandidateDocuments(candidateId, payload) {
-  return updateStore((state) => {
+  const result = updateStore((state) => {
     const candidate = state.candidates.find((x) => x.id === candidateId);
     if (!candidate) {
       throw new Error('Candidate not found');
@@ -294,10 +399,12 @@ function submitCandidateDocuments(candidateId, payload) {
     state.__result = candidate;
     return state;
   }).__result;
+  triggerGoogleSheetsSync('candidate.documents_submitted');
+  return result;
 }
 
 function extractCandidateProfile(candidateId, payload) {
-  return updateStore((state) => {
+  const result = updateStore((state) => {
     const candidate = state.candidates.find((x) => x.id === candidateId);
     if (!candidate) {
       throw new Error('Candidate not found');
@@ -366,6 +473,8 @@ function extractCandidateProfile(candidateId, payload) {
     state.__result = candidate;
     return state;
   }).__result;
+  triggerGoogleSheetsSync('candidate.profile_extracted');
+  return result;
 }
 
 function enqueueExtractionJob(candidateId, files = []) {
@@ -403,7 +512,7 @@ function processExtractionJob(jobId, payload = {}) {
 }
 
 function calculateRecommendation(candidateId) {
-  return updateStore((state) => {
+  const result = updateStore((state) => {
     const candidate = state.candidates.find((x) => x.id === candidateId);
     if (!candidate) {
       throw new Error('Candidate not found');
@@ -471,6 +580,8 @@ function calculateRecommendation(candidateId) {
     state.__result = candidate.recommendation;
     return state;
   }).__result;
+  triggerGoogleSheetsSync('candidate.scored');
+  return result;
 }
 
 function updateScoringWeights(partialWeights = {}) {
@@ -486,7 +597,7 @@ function updateScoringWeights(partialWeights = {}) {
 }
 
 function updateCandidateStatus(candidateId, action, payload = {}) {
-  return updateStore((state) => {
+  const result = updateStore((state) => {
     const candidate = state.candidates.find((x) => x.id === candidateId);
     if (!candidate) {
       throw new Error('Candidate not found');
@@ -563,6 +674,8 @@ function updateCandidateStatus(candidateId, action, payload = {}) {
     state.__result = candidate;
     return state;
   }).__result;
+  triggerGoogleSheetsSync(`candidate.${action}`);
+  return result;
 }
 
 function retryEmailEvent(eventId) {
@@ -641,7 +754,7 @@ function processInboundEmail(payload) {
 }
 
 function mergeDuplicateCandidates(primaryId, duplicateId) {
-  return updateStore((state) => {
+  const result = updateStore((state) => {
     const primary = state.candidates.find((x) => x.id === primaryId);
     const duplicate = state.candidates.find((x) => x.id === duplicateId);
     if (!primary || !duplicate) {
@@ -667,10 +780,12 @@ function mergeDuplicateCandidates(primaryId, duplicateId) {
     state.__result = primary;
     return state;
   }).__result;
+  triggerGoogleSheetsSync('candidate.duplicate_merged');
+  return result;
 }
 
 function verifyCandidateExtraction(candidateId, updates = {}) {
-  return updateStore((state) => {
+  const result = updateStore((state) => {
     const candidate = state.candidates.find((x) => x.id === candidateId);
     if (!candidate) {
       throw new Error('Candidate not found');
@@ -705,6 +820,8 @@ function verifyCandidateExtraction(candidateId, updates = {}) {
     state.__result = candidate;
     return state;
   }).__result;
+  triggerGoogleSheetsSync('candidate.extraction_verified');
+  return result;
 }
 
 function listCandidates(filters = {}) {
@@ -760,27 +877,7 @@ function getDashboard() {
 }
 
 function toSheetRows() {
-  return readStore().candidates.map((candidate) => ({
-    'Name of Applicant': candidate.fullName,
-    'Position Applying For': candidate.position,
-    'Status of Application': candidate.statusOfApplication,
-    'Letter of Intent': candidate.documentStatus['Letter of Intent'] === 'received',
-    PDS: candidate.documentStatus.PDS === 'received',
-    WES: candidate.documentStatus.WES === 'received',
-    'Educational Attainment': candidate.educationalAttainment,
-    'Work Experience': candidate.workExperience,
-    Awards: candidate.awards,
-    Trainings: candidate.trainings,
-    CSC: candidate.cscEligibility,
-    'Email Address': candidate.email,
-    Status: candidate.workflowState,
-    Link: candidate.link,
-    'Special Note': candidate.specialNote,
-    'Email sent': candidate.emailSent,
-    'Confirmed attendance': candidate.confirmedAttendance,
-    'System Score': candidate.recommendation.score,
-    Recommendation: candidate.recommendation.rankLabel
-  }));
+  return toSheetRowsFromCandidates(readStore().candidates);
 }
 
 function listAuditLogs() {
@@ -859,11 +956,13 @@ function exportBackup() {
 }
 
 function importBackup(payload) {
-  return updateStore(() => {
+  const result = updateStore(() => {
     const restored = normalizeState(payload);
     restored.__result = restored;
     return restored;
   }).__result;
+  triggerGoogleSheetsSync('backup.restored');
+  return result;
 }
 
 module.exports = {
@@ -897,5 +996,7 @@ module.exports = {
   getAnalytics,
   exportBackup,
   importBackup,
+  getIntegrationsStatus,
+  syncGoogleSheets,
   WORKFLOW_STATES
 };

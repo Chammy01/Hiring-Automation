@@ -12,7 +12,15 @@ const initialState = {
   verificationQueue: [],
   templates: { ...DEFAULT_TEMPLATES },
   settings: {
-    scoringWeights: { ...SCORING_WEIGHTS }
+    scoringWeights: { ...SCORING_WEIGHTS },
+    integrations: {
+      googleSheets: {
+        spreadsheetId: '',
+        spreadsheetUrl: '',
+        lastSyncedAt: '',
+        lastError: ''
+      }
+    }
   }
 };
 
@@ -32,6 +40,18 @@ function normalizeState(state = {}) {
       scoringWeights: {
         ...SCORING_WEIGHTS,
         ...((state.settings && state.settings.scoringWeights) || {})
+      },
+      integrations: {
+        googleSheets: {
+          spreadsheetId:
+            (((state.settings || {}).integrations || {}).googleSheets || {}).spreadsheetId || '',
+          spreadsheetUrl:
+            (((state.settings || {}).integrations || {}).googleSheets || {}).spreadsheetUrl || '',
+          lastSyncedAt:
+            (((state.settings || {}).integrations || {}).googleSheets || {}).lastSyncedAt || '',
+          lastError:
+            (((state.settings || {}).integrations || {}).googleSheets || {}).lastError || ''
+        }
       }
     }
   };

@@ -32,7 +32,9 @@ const {
   acknowledgementTemplate,
   getAnalytics,
   exportBackup,
-  importBackup
+  importBackup,
+  getIntegrationsStatus,
+  syncGoogleSheets
 } = require('./services');
 
 const app = express();
@@ -363,6 +365,15 @@ app.get('/api/dashboard', secure('read:dashboard'), (_req, res) => {
 
 app.get('/api/analytics', secure('read:dashboard'), (_req, res) => {
   res.json(getAnalytics());
+});
+
+app.get('/api/integrations', secure('read:dashboard'), (_req, res) => {
+  res.json(getIntegrationsStatus());
+});
+
+app.post('/api/integrations/google-sheets/sync', secureWrite('write:candidates'), async (_req, res) => {
+  const result = await syncGoogleSheets('manual_sync');
+  return res.json(result);
 });
 
 app.get('/api/sheets/rows', secure('read:candidates'), (_req, res) => {
