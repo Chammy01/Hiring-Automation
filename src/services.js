@@ -13,6 +13,7 @@ const {
 const { config } = require('./config');
 const { encryptText, decryptText } = require('./security');
 const { upsertCandidateSheetRows } = require('./integrations/googleSheets');
+const { classifyDocument } = require('./docClassifier');
 
 function nowIso() {
   return new Date().toISOString();
@@ -979,9 +980,94 @@ function importBackup(payload) {
   return result;
 }
 
+/**
+ * Content-based document ingestion: classifies files by filename + extracted text,
+ * then updates candidate document status. Used by the Gmail intake worker.
+ *
+ * @param {string} candidateId
+ * @param {{ submittedAt?: string, subject?: string, files: Array<{fileName:string, text?:string, mimeType?:string}> }} payload
+ */
+function submitCandidateDocumentsContent(candidateId, payload) {
+  const result = updateStore((state) => {
+    const candidate = state.candidates.find((x) => x.id === candidateId);
+    if (!candidate) {
+      throw new Error('Candidate not found');
+    }
+
+    const files = Array.isArray(payload.files) ? payload.files : [];
+    const classificationResults = [];
+
+    for (const file of files) {
+      const classification = classifyDocument(file.fileName, file.text);
+      if (classification) {
+        classificationResults.push({
+          fileName: file.fileName,
+          mimeType: file.mimeType || '',
+          docName: classification.docName,
+          score: classification.score,
+          matchedBy: classification.matchedBy
+        });
+      } else {
+        classificationResults.push({
+          fileName: file.fileName,
+          mimeType: file.mimeType || '',
+          docName: null,
+          score: 0,
+          matchedBy: 'unclassified'
+        });
+      }
+    }
+
+    for (const requiredDoc of candidate.requiredDocuments) {
+      const matched = classificationResults.filter((r) => r.docName === requiredDoc);
+      if (matched.length > 0) {
+        if (candidate.documentStatus[requiredDoc] !== 'received') {
+          candidate.documentStatus[requiredDoc] = 'received';
+        }
+      }
+    }
+
+    if (payload.subject) {
+      applyCompliance(candidate, payload.submittedAt, payload.subject);
+    }
+
+    const allReceived = Object.values(candidate.documentStatus).every((status) => status === 'received');
+
+    if (candidate.compliance.disqualified) {
+      transitionCandidate(candidate, WORKFLOW_STATES.REJECTED);
+      candidate.statusOfApplication = 'Disqualified';
+      candidate.specialNote = candidate.compliance.reasons.join('; ');
+    } else if (allReceived) {
+      if (candidate.workflowState === WORKFLOW_STATES.DOCS_PENDING) {
+        transitionCandidate(candidate, WORKFLOW_STATES.DOCS_COMPLETE);
+        transitionCandidate(candidate, WORKFLOW_STATES.FOR_REVIEW);
+        candidate.statusOfApplication = 'For Review';
+      }
+    } else {
+      candidate.statusOfApplication = 'Documents Pending';
+    }
+
+    candidate.updatedAt = nowIso();
+    addAuditLog(state, 'candidate.documents_content_submitted', candidate.id, {
+      fileCount: files.length,
+      classified: classificationResults.filter((r) => r.docName).map((r) => ({
+        fileName: r.fileName,
+        docName: r.docName,
+        matchedBy: r.matchedBy
+      }))
+    });
+
+    state.__result = { candidate, classifications: classificationResults };
+    return state;
+  }).__result;
+  triggerGoogleSheetsSync('candidate.documents_submitted');
+  return result;
+}
+
 module.exports = {
   createCandidateFromApplication,
   submitCandidateDocuments,
+  submitCandidateDocumentsContent,
   extractCandidateProfile,
   enqueueExtractionJob,
   processExtractionJob,

@@ -74,3 +74,44 @@ test('invalid attachment marks document as invalid', () => {
   const candidate = getCandidate(created.candidate.id);
   assert.equal(candidate.documentStatus['Proof of CSC Eligibility'], 'invalid');
 });
+
+test('submitCandidateDocumentsContent classifies by filename and content keywords', () => {
+  const {
+    createCandidateFromApplication,
+    submitCandidateDocumentsContent,
+    getCandidate
+  } = require('../src/services');
+
+  const created = createCandidateFromApplication({
+    fullName: 'Content Matcher',
+    email: 'cmatcher@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+
+  const { candidate, classifications } = submitCandidateDocumentsContent(created.candidate.id, {
+    submittedAt: '2026-04-01T00:00:00.000Z',
+    subject: 'Application for Administrative Aide IV (Clerk II)',
+    files: [
+      { fileName: 'loi.pdf', text: 'I wish to apply for the position stated herein' },
+      { fileName: 'pds_form.pdf', text: 'Personal Data Sheet civil service form date of birth' },
+      { fileName: 'wes_form.pdf', text: 'Work Experience Sheet inclusive dates monthly salary' }
+    ]
+  });
+
+  assert.ok(Array.isArray(classifications));
+  assert.equal(candidate.documentStatus['Letter of Intent'], 'received');
+  assert.equal(candidate.documentStatus['PDS'], 'received');
+  assert.equal(candidate.documentStatus['WES'], 'received');
+});
+
+test('classifyDocument returns correct doc for filename and content', () => {
+  const { classifyDocument } = require('../src/docClassifier');
+
+  const result = classifyDocument('ipcr_2025.pdf', 'individual performance commitment review final average rating');
+  assert.ok(result);
+  assert.equal(result.docName, 'Latest IPCR');
+  assert.ok(result.score > 0);
+
+  const none = classifyDocument('random_file.pdf', '');
+  assert.equal(none, null);
+});

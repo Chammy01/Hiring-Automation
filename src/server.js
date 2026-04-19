@@ -6,6 +6,7 @@ const { requirePermission } = require('./security');
 const {
   createCandidateFromApplication,
   submitCandidateDocuments,
+  submitCandidateDocumentsContent,
   extractCandidateProfile,
   enqueueExtractionJob,
   processExtractionJob,
@@ -94,6 +95,18 @@ const docsSchema = z.object({
   invalidAttachments: z.array(z.string()).optional(),
   subject: z.string(),
   submittedAt: z.string().optional()
+});
+
+const docsContentSchema = z.object({
+  submittedAt: z.string().optional(),
+  subject: z.string().optional(),
+  files: z.array(
+    z.object({
+      fileName: z.string(),
+      text: z.string().optional(),
+      mimeType: z.string().optional()
+    })
+  )
 });
 
 const extractSchema = z.object({
@@ -211,6 +224,19 @@ app.post('/api/candidates/:id/documents', secureWrite('write:candidates'), (req,
   try {
     const candidate = submitCandidateDocuments(req.params.id, parsed.data);
     return res.json(candidate);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/candidates/:id/documents/content', secureWrite('write:candidates'), (req, res) => {
+  const parsed = docsContentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const result = submitCandidateDocumentsContent(req.params.id, parsed.data);
+    return res.json(result);
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }

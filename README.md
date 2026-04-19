@@ -214,6 +214,7 @@ Restart the app and it will regenerate `data/store.json` automatically.
 - `POST /api/applications/intake`
 - `POST /api/email/inbound`
 - `POST /api/candidates/:id/documents`
+- `POST /api/candidates/:id/documents/content`
 - `POST /api/candidates/:id/extract`
 - `POST /api/candidates/:id/extraction-jobs`
 - `GET /api/extraction-queue`
@@ -241,3 +242,118 @@ Restart the app and it will regenerate `data/store.json` automatically.
 - Replace JSON store with PostgreSQL.
 - Add OCR adapters (Tesseract + PDF parser) to extraction job workers.
 - Add Ollama summary endpoint for recommendation explanation enrichment.
+
+---
+
+## Gmail OAuth Ingestion Worker (Local)
+
+The worker in `src/workers/gmail-intake.js` reads real Gmail attachments and updates candidate document status automatically.
+
+### Setup (one-time)
+
+#### 1) Enable Gmail API and create OAuth Desktop credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a project (or select an existing one).
+3. Enable **Gmail API**: APIs & Services → Library → search "Gmail API" → Enable.
+4. Create OAuth credentials:
+   - APIs & Services → Credentials → **Create Credentials** → **OAuth client ID**
+   - Application type: **Desktop app**
+   - Click **Download JSON** — this is your `credentials.json`
+5. Configure the OAuth consent screen if prompted (External app, add your Gmail as test user).
+
+#### 2) Place credentials securely
+
+Put the downloaded file at the path specified by `GMAIL_CREDENTIALS_PATH` (default: `credentials.json` in project root).
+
+> ⚠️ **Never commit `credentials.json` or token files** — they are in `.gitignore`.
+
+#### 3) First-time authorization
+
+Run the worker once. It will print an authorization URL:
+
+```bash
+node src/workers/gmail-intake.js
+```
+
+Visit the URL, authorize the app, copy the authorization code, and paste it back into the terminal.
+The token is saved to `GMAIL_TOKEN_PATH` (default: `data/gmail-token.json`).
+
+### New environment variables
+
+Add these to your `.env`:
+
+```env
+# Path to your OAuth Desktop credentials JSON downloaded from Google Cloud Console
+GMAIL_CREDENTIALS_PATH=credentials.json
+
+# Where the OAuth token will be stored after first authorization
+GMAIL_TOKEN_PATH=data/gmail-token.json
+
+# Gmail search query used to find application emails
+GMAIL_POLL_QUERY=subject:(Application for) has:attachment
+
+# Polling interval in milliseconds for --watch mode (default: 60000 = 1 minute)
+GMAIL_POLL_INTERVAL_MS=60000
+
+# Base URL of the hiring-automation API server
+API_BASE_URL=http://localhost:3000
+
+# API key (optional; must match HR_API_KEY in server .env if set)
+API_KEY=
+```
+
+### Running the worker
+
+**Single run** (processes matching emails once, then exits):
+```bash
+node src/workers/gmail-intake.js
+```
+
+**Watch mode** (polls continuously on the configured interval):
+```bash
+node src/workers/gmail-intake.js --watch
+```
+
+### How it works
+
+1. The worker searches Gmail using `GMAIL_POLL_QUERY`.
+2. For each unprocessed email it:
+   - Extracts sender email and parses position from subject (`Application for <position>`).
+   - Matches candidate using **Strategy (C)**:
+     - Find candidate with matching sender email + position → update that candidate.
+     - If ambiguous or no match, look for `CandidateID:<id>` or `[HA:<id>]` token in subject.
+     - If still unresolved, log a message and skip (the email stays processable on retry).
+   - Downloads all attachments.
+   - Extracts text from PDF (via `pdf-parse`) and DOCX (via `mammoth`).
+   - Classifies each attachment by filename hints + content keywords.
+   - Posts to `POST /api/candidates/:id/documents/content`.
+3. Processed message IDs are stored in `data/gmail-processed-ids.json` to avoid reprocessing.
+
+### Applicant subject format
+
+Applicants should email with subject:
+```
+Application for <Position Title>
+```
+Example:
+```
+Application for Administrative Aide IV (Clerk II)
+```
+
+If multiple candidates share the same email+position (rare), include a token:
+```
+Application for Administrative Aide IV (Clerk II) CandidateID:<uuid>
+```
+or:
+```
+Application for Administrative Aide IV (Clerk II) [HA:<uuid>]
+```
+
+### Security notes
+
+- `credentials.json` and `data/gmail-token.json` are in `.gitignore` — never commit them.
+- The worker does **not** log extracted document contents — only file metadata and classification results.
+- Use a dedicated Google account/project for the integration in production.
+- Revoke app access via Google Account → Security → Third-party apps if needed.
+
