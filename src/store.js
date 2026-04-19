@@ -3,6 +3,30 @@ const path = require('node:path');
 const { config } = require('./config');
 const { DEFAULT_TEMPLATES, SCORING_WEIGHTS } = require('./constants');
 
+function makeDefaultAppSettings() {
+  return {
+    hiringDeadline: config.defaultDeadline,
+    companyEmail: config.fromEmail,
+    mailboxAddress: config.mailboxAddress,
+    companyName: 'Our Office',
+    replyToEmail: '',
+    hiringManagerName: '',
+    applicationOpenDate: '',
+    timezone: 'Asia/Manila',
+    autoResponseSubject: 'Application Received: {{position}}',
+    interviewWindowStart: '08:00',
+    interviewWindowEnd: '17:00',
+    maxApplicationsPerRole: 0,
+    allowedFileTypes: 'pdf,doc,docx',
+    maxUploadSizeMb: 10,
+    notifyNewApplication: true,
+    reminderCadenceDays: 3,
+    careerPageBanner: '',
+    defaultJobVisibility: 'public',
+    dataRetentionDays: 365
+  };
+}
+
 const initialState = {
   candidates: [],
   emailEvents: [],
@@ -13,6 +37,7 @@ const initialState = {
   templates: { ...DEFAULT_TEMPLATES },
   settings: {
     scoringWeights: { ...SCORING_WEIGHTS },
+    appSettings: makeDefaultAppSettings(),
     integrations: {
       googleSheets: {
         spreadsheetId: '',
@@ -26,6 +51,8 @@ const initialState = {
 
 function normalizeState(state = {}) {
   const googleSheetsState = (((state.settings || {}).integrations || {}).googleSheets || {});
+  const storedAppSettings = (state.settings && state.settings.appSettings) || {};
+  const defaults = makeDefaultAppSettings();
   return {
     candidates: Array.isArray(state.candidates) ? state.candidates : [],
     emailEvents: Array.isArray(state.emailEvents) ? state.emailEvents : [],
@@ -41,6 +68,10 @@ function normalizeState(state = {}) {
       scoringWeights: {
         ...SCORING_WEIGHTS,
         ...((state.settings && state.settings.scoringWeights) || {})
+      },
+      appSettings: {
+        ...defaults,
+        ...storedAppSettings
       },
       integrations: {
         googleSheets: {
@@ -96,5 +127,6 @@ module.exports = {
   writeStore,
   updateStore,
   initialState,
-  normalizeState
+  normalizeState,
+  makeDefaultAppSettings
 };

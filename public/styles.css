@@ -1048,6 +1048,37 @@ input[type="checkbox"] {
 
 .form-field textarea { resize: vertical; min-height: 80px; }
 
+.form-hint {
+  font-size: 11px;
+  color: var(--text-tertiary, var(--text-secondary));
+  opacity: 0.75;
+  line-height: 1.4;
+}
+
+.checkbox-field {
+  flex-direction: row;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 /* ── 15. OVERVIEW DETAIL LAYOUT ──────────────────────────────── */
 .detail-grid {
   display: grid;

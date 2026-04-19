@@ -220,13 +220,14 @@ sidebarToggle.addEventListener('click', () => {
 setSidebarCollapsed(localStorage.getItem('hf-sidebar') === '1');
 
 // ── PAGE NAVIGATION ────────────────────────────────────────────
-const pages = { dashboard: null, integrations: null, audit: null };
+const pages = { dashboard: null, integrations: null, settings: null, audit: null };
 const navItems = document.querySelectorAll('.sidebar-nav-item[data-page]');
 const pageTitle = document.getElementById('page-title');
 
 const PAGE_TITLES = {
   dashboard:    'Dashboard',
   integrations: 'Integrations',
+  settings:     'Settings',
   audit:        'Audit Log'
 };
 
@@ -246,6 +247,7 @@ function showPage(name) {
 
   if (name === 'audit') loadAuditPage();
   if (name === 'integrations') loadIntegrationsPage();
+  if (name === 'settings') loadSettingsPage();
 }
 
 navItems.forEach((item) => {
@@ -1266,6 +1268,113 @@ document.addEventListener('keydown', (e) => {
   // 'R' → refresh
   if (!inInput && e.key.toLowerCase() === 'r' && openModals.size === 0 && cmdPalette.hasAttribute('hidden')) {
     document.getElementById('refresh').click();
+  }
+});
+
+// ── SETTINGS PAGE ─────────────────────────────────────────────
+let currentSettings = null;
+
+function isoToDatetimeLocal(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch {
+    return '';
+  }
+}
+
+function datetimeLocalToIso(local) {
+  if (!local) return '';
+  try {
+    return new Date(local).toISOString();
+  } catch {
+    return local;
+  }
+}
+
+function applySettingsToForm(s) {
+  const get = (id) => document.getElementById(id);
+  get('s-hiringDeadline').value = isoToDatetimeLocal(s.hiringDeadline);
+  get('s-applicationOpenDate').value = isoToDatetimeLocal(s.applicationOpenDate);
+  get('s-maxApplicationsPerRole').value = s.maxApplicationsPerRole ?? 0;
+  get('s-defaultJobVisibility').value = s.defaultJobVisibility || 'public';
+  get('s-companyName').value = s.companyName || '';
+  get('s-companyEmail').value = s.companyEmail || '';
+  get('s-replyToEmail').value = s.replyToEmail || '';
+  get('s-mailboxAddress').value = s.mailboxAddress || '';
+  get('s-hiringManagerName').value = s.hiringManagerName || '';
+  get('s-timezone').value = s.timezone || '';
+  get('s-autoResponseSubject').value = s.autoResponseSubject || '';
+  get('s-reminderCadenceDays').value = s.reminderCadenceDays ?? 3;
+  get('s-notifyNewApplication').checked = Boolean(s.notifyNewApplication);
+  get('s-interviewWindowStart').value = s.interviewWindowStart || '';
+  get('s-interviewWindowEnd').value = s.interviewWindowEnd || '';
+  get('s-allowedFileTypes').value = s.allowedFileTypes || '';
+  get('s-maxUploadSizeMb').value = s.maxUploadSizeMb ?? 10;
+  get('s-careerPageBanner').value = s.careerPageBanner || '';
+  get('s-dataRetentionDays').value = s.dataRetentionDays ?? 365;
+}
+
+function readSettingsFromForm() {
+  const get = (id) => document.getElementById(id);
+  return {
+    hiringDeadline: datetimeLocalToIso(get('s-hiringDeadline').value),
+    applicationOpenDate: datetimeLocalToIso(get('s-applicationOpenDate').value),
+    maxApplicationsPerRole: Number(get('s-maxApplicationsPerRole').value) || 0,
+    defaultJobVisibility: get('s-defaultJobVisibility').value,
+    companyName: get('s-companyName').value.trim(),
+    companyEmail: get('s-companyEmail').value.trim(),
+    replyToEmail: get('s-replyToEmail').value.trim(),
+    mailboxAddress: get('s-mailboxAddress').value.trim(),
+    hiringManagerName: get('s-hiringManagerName').value.trim(),
+    timezone: get('s-timezone').value.trim(),
+    autoResponseSubject: get('s-autoResponseSubject').value.trim(),
+    reminderCadenceDays: Number(get('s-reminderCadenceDays').value) || 3,
+    notifyNewApplication: get('s-notifyNewApplication').checked,
+    interviewWindowStart: get('s-interviewWindowStart').value,
+    interviewWindowEnd: get('s-interviewWindowEnd').value,
+    allowedFileTypes: get('s-allowedFileTypes').value.trim(),
+    maxUploadSizeMb: Number(get('s-maxUploadSizeMb').value) || 10,
+    careerPageBanner: get('s-careerPageBanner').value,
+    dataRetentionDays: Number(get('s-dataRetentionDays').value) || 365
+  };
+}
+
+async function loadSettingsPage() {
+  try {
+    currentSettings = await api('/api/settings');
+    applySettingsToForm(currentSettings);
+  } catch (err) {
+    toast(`Failed to load settings: ${err.message}`, 'error', 0);
+  }
+}
+
+const settingsForm = document.getElementById('settings-form');
+settingsForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const saveBtn = document.getElementById('settings-save');
+  saveBtn.disabled = true;
+  try {
+    const updates = readSettingsFromForm();
+    currentSettings = await api('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+    applySettingsToForm(currentSettings);
+    toast('Settings saved successfully', 'success');
+  } catch (err) {
+    toast(`Failed to save settings: ${err.message}`, 'error', 0);
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+document.getElementById('settings-reset').addEventListener('click', () => {
+  if (currentSettings) {
+    applySettingsToForm(currentSettings);
+    toast('Reset to last saved values', 'info');
   }
 });
 

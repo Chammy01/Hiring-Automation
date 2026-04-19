@@ -67,7 +67,60 @@ Open-source hiring workflow automation with intake, compliance validation, extra
 - UI: Vanilla HTML/CSS/JS
 - Security primitives: Node crypto (AES-256-GCM)
 
-## Complete Local Setup Guide (Step-by-Step)
+## App Settings (Admin-Editable)
+
+All runtime settings are stored in `data/store.json` under `settings.appSettings` and are fully editable without changing code.
+
+### Where to edit
+
+- **Via the UI:** Open the app at `http://localhost:3000`, click **Settings** in the sidebar, and update any field. Changes take effect immediately for all new actions (emails, deadline checks, etc.).
+- **Via the API (advanced):**
+  ```bash
+  # Read current settings
+  curl -H "x-role: hr" http://localhost:3000/api/settings
+
+  # Update specific fields
+  curl -X PUT http://localhost:3000/api/settings \
+    -H "Content-Type: application/json" \
+    -H "x-role: hr" \
+    -d '{"hiringDeadline":"2027-03-31T23:59:59.000Z","companyEmail":"hr@myoffice.gov.ph"}'
+  ```
+- **Seed defaults:** On first boot (or after deleting `data/store.json`), all fields are seeded from environment variables or safe built-in defaults (see the `.env` section above). No migration steps are required.
+
+### Settings reference
+
+| Field | Type | Description | Default / Example |
+|---|---|---|---|
+| `hiringDeadline` | ISO-8601 datetime string | Deadline for all compliance checks and acknowledgement emails | `DOCUMENT_DEADLINE` env var |
+| `companyEmail` | email string | From-address for all outbound emails | `FROM_EMAIL` env var |
+| `mailboxAddress` | email string | Inbound mailbox where applications arrive | `MAILBOX_ADDRESS` env var |
+| `companyName` | string | Your office/company name | `"Our Office"` |
+| `replyToEmail` | email string or `""` | Reply-To address for outbound emails | `""` |
+| `hiringManagerName` | string | Hiring manager name shown in emails | `""` |
+| `applicationOpenDate` | ISO-8601 datetime or `""` | When applications start being accepted | `""` |
+| `timezone` | IANA TZ identifier | Used for deadline display/calculations | `"Asia/Manila"` |
+| `autoResponseSubject` | string | Subject template for auto-reply (`{{position}}` supported) | `"Application Received: {{position}}"` |
+| `interviewWindowStart` | `HH:MM` time | Earliest time slots for interviews | `"08:00"` |
+| `interviewWindowEnd` | `HH:MM` time | Latest time slots for interviews | `"17:00"` |
+| `maxApplicationsPerRole` | integer ≥ 0 | Cap per position (0 = unlimited) | `0` |
+| `allowedFileTypes` | comma-separated extensions | Allowed resume/document extensions | `"pdf,doc,docx"` |
+| `maxUploadSizeMb` | positive number | Max file size per attachment (MB) | `10` |
+| `notifyNewApplication` | boolean | Send internal alert on new candidate | `true` |
+| `reminderCadenceDays` | positive integer | Days between follow-up reminders | `3` |
+| `careerPageBanner` | string | Banner text shown on career page | `""` |
+| `defaultJobVisibility` | `"public"` / `"private"` / `"draft"` | Default visibility for new job posts | `"public"` |
+| `dataRetentionDays` | positive integer | Days before auto-archiving candidate records | `365` |
+
+### Validation
+
+The PUT endpoint validates:
+- `companyEmail`, `mailboxAddress`, `replyToEmail` must be valid email format (or empty string for `replyToEmail`).
+- `defaultJobVisibility` must be one of `public`, `private`, `draft`.
+- Numeric fields (`maxApplicationsPerRole`, `maxUploadSizeMb`, etc.) must be positive numbers or non-negative integers as appropriate.
+
+Invalid requests return HTTP 400 with a structured error body.
+
+
 
 Follow these steps to run the full system on your own computer.
 
@@ -162,9 +215,10 @@ Expected response:
 6. Click **KPI cards** to instantly filter the table by that status
 7. Use the **position** and **status** dropdowns to filter; type in the **search** box to find by name/email
 8. Click table column headers to **sort** (state persists in URL + localStorage)
-9. Open the **Integrations** page from the sidebar to view and sync Google Sheets
-10. Open the **Audit Log** page from the sidebar to review all action history
-11. Press `⌘K` (or `Ctrl+K`) to open the **command palette** for quick navigation
+9. Open the **Settings** page from the sidebar to view and update all editable configuration (deadline, company email, and more)
+10. Open the **Integrations** page from the sidebar to view and sync Google Sheets
+11. Open the **Audit Log** page from the sidebar to review all action history
+12. Press `⌘K` (or `Ctrl+K`) to open the **command palette** for quick navigation
 
 ## UI Keyboard Shortcuts
 
@@ -234,6 +288,8 @@ Restart the app and it will regenerate `data/store.json` automatically.
 
 ## Key API Endpoints
 
+- `GET /api/settings` — read all app settings
+- `PUT /api/settings` — update one or more app settings
 - `POST /api/applications/intake`
 - `POST /api/email/inbound`
 - `POST /api/candidates/:id/documents`

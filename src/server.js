@@ -14,6 +14,8 @@ const {
   calculateRecommendation,
   updateScoringWeights,
   getScoringWeights,
+  getAppSettings,
+  updateAppSettings,
   updateCandidateStatus,
   retryEmailEvent,
   processInboundEmail,
@@ -166,12 +168,35 @@ const mergeSchema = z.object({
   duplicateId: z.string().min(1)
 });
 
+const appSettingsSchema = z.object({
+  hiringDeadline: z.string().min(1).optional(),
+  companyEmail: z.string().email().optional(),
+  mailboxAddress: z.string().email().optional(),
+  companyName: z.string().optional(),
+  replyToEmail: z.union([z.string().email(), z.literal('')]).optional(),
+  hiringManagerName: z.string().optional(),
+  applicationOpenDate: z.string().optional(),
+  timezone: z.string().optional(),
+  autoResponseSubject: z.string().optional(),
+  interviewWindowStart: z.string().optional(),
+  interviewWindowEnd: z.string().optional(),
+  maxApplicationsPerRole: z.number().int().nonnegative().optional(),
+  allowedFileTypes: z.string().optional(),
+  maxUploadSizeMb: z.number().positive().optional(),
+  notifyNewApplication: z.boolean().optional(),
+  reminderCadenceDays: z.number().int().positive().optional(),
+  careerPageBanner: z.string().optional(),
+  defaultJobVisibility: z.enum(['public', 'private', 'draft']).optional(),
+  dataRetentionDays: z.number().int().positive().optional()
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'hiring-automation' });
 });
 
 app.get('/api/config/ack-template', (_req, res) => {
-  res.json({ template: acknowledgementTemplate(config.defaultDeadline, getTemplates()) });
+  const settings = getAppSettings();
+  res.json({ template: acknowledgementTemplate(settings.hiringDeadline, getTemplates()) });
 });
 
 app.get('/api/positions', (_req, res) => {
@@ -452,6 +477,23 @@ app.post('/api/restore', secureWrite('write:backup'), (req, res) => {
   try {
     const restored = importBackup(req.body || {});
     return res.json({ restored });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/settings', secure('read:dashboard'), (_req, res) => {
+  res.json(getAppSettings());
+});
+
+app.put('/api/settings', secureWrite('write:candidates'), (req, res) => {
+  const parsed = appSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const updated = updateAppSettings(parsed.data);
+    return res.json(updated);
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
