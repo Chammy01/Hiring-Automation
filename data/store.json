@@ -1,7 +1,7 @@
 {
   "candidates": [
     {
-      "id": "037fa1de-5782-4cdf-a724-d9efb2de7d0e",
+      "id": "c8bf0afe-5da7-4601-ae65-54d37450b8c2",
       "fullName": "John Smith",
       "email": "john@example.com",
       "position": "Administrative Aide IV (Clerk II)",
@@ -50,15 +50,15 @@
         "breakdown": {}
       },
       "interviewSchedule": null,
-      "createdAt": "2026-04-19T03:14:51.239Z",
-      "updatedAt": "2026-04-19T03:14:51.239Z"
+      "createdAt": "2026-04-19T03:15:48.246Z",
+      "updatedAt": "2026-04-19T03:15:48.247Z"
     }
   ],
   "emailEvents": [
     {
-      "id": "d423bd2b-cbbd-4dbc-8ab5-191f0e38a144",
-      "timestamp": "2026-04-19T03:14:51.239Z",
-      "candidateId": "037fa1de-5782-4cdf-a724-d9efb2de7d0e",
+      "id": "baa4ec2a-3ae5-4348-85e6-4469a87d0ef0",
+      "timestamp": "2026-04-19T03:15:48.246Z",
+      "candidateId": "c8bf0afe-5da7-4601-ae65-54d37450b8c2",
       "direction": "outbound",
       "subject": "Application Received: Administrative Aide IV (Clerk II)",
       "body": "Dear Applicant,\n\nThank you for your interest in applying to our Office.\n\nIn view that the position you are applying for is a regular position, you are hereby requested to submit the following documentary requirements on or before 07 April 2026:\n\n• Letter of Intent\n• One (1) copy of a fully accomplished Personal Data Sheet (PDS) and Work Experience Sheet (WES) (CSC Form No. 212, s. 2025)\n(Forms may be downloaded from the Civil Service Commission website)\n• One (1) copy of relevant training/seminar certificates (if applicable)\n• One (1) copy of awards received from your last promotion (if applicable)\n• One (1) copy of your latest Individual Performance Commitment and Review (IPCR) (if applicable)\n• One (1) copy of proof of CSC Eligibility\n \nKindly submit the above documents through email using the prescribed subject format:\n\nApplication for (Position and Title)\n(ex: Application for Administrative Assistant I (Computer Operator I))\n\nPlease be advised that non-compliance with the required documents, failure to follow the prescribed subject format, or submission beyond the stated deadline shall result in automatic disqualification from the selection process.\n\nThis is an automated reminder. If this has already been taken care of, please disregard. We kindly ask that you reply to acknowledge receipt of this message.\n\nThank you.\nVery truly yours,",
@@ -67,28 +67,28 @@
   ],
   "auditLogs": [
     {
-      "id": "ebdcf8d9-d0d7-474c-9928-506aa68eaa4a",
-      "timestamp": "2026-04-19T03:14:51.239Z",
+      "id": "7bf811c7-c555-4e69-924a-2a8fc2b6f353",
+      "timestamp": "2026-04-19T03:15:48.246Z",
       "action": "candidate.created",
-      "candidateId": "037fa1de-5782-4cdf-a724-d9efb2de7d0e",
+      "candidateId": "c8bf0afe-5da7-4601-ae65-54d37450b8c2",
       "metadata": {
         "source": "email_intake"
       }
     },
     {
-      "id": "13e3091a-dfd3-4754-ba7e-8c5b0ca120cb",
-      "timestamp": "2026-04-19T03:14:51.239Z",
+      "id": "4512c406-cf89-4cd2-8181-ee01ded48a87",
+      "timestamp": "2026-04-19T03:15:48.246Z",
       "action": "email.ack_sent",
-      "candidateId": "037fa1de-5782-4cdf-a724-d9efb2de7d0e",
+      "candidateId": "c8bf0afe-5da7-4601-ae65-54d37450b8c2",
       "metadata": {
         "subject": "Application Received: Administrative Aide IV (Clerk II)"
       }
     },
     {
-      "id": "eab8285b-52fc-4f78-9d81-b072f0f97597",
-      "timestamp": "2026-04-19T03:14:51.239Z",
+      "id": "01ba1339-c391-4f89-969f-41cece595325",
+      "timestamp": "2026-04-19T03:15:48.247Z",
       "action": "candidate.documents_submitted",
-      "candidateId": "037fa1de-5782-4cdf-a724-d9efb2de7d0e",
+      "candidateId": "c8bf0afe-5da7-4601-ae65-54d37450b8c2",
       "metadata": {
         "attachments": [
           "letter_of_intent.pdf",
@@ -107,7 +107,7 @@
     }
   ],
   "__result": {
-    "id": "037fa1de-5782-4cdf-a724-d9efb2de7d0e",
+    "id": "c8bf0afe-5da7-4601-ae65-54d37450b8c2",
     "fullName": "John Smith",
     "email": "john@example.com",
     "position": "Administrative Aide IV (Clerk II)",
@@ -156,7 +156,7 @@
       "breakdown": {}
     },
     "interviewSchedule": null,
-    "createdAt": "2026-04-19T03:14:51.239Z",
-    "updatedAt": "2026-04-19T03:14:51.239Z"
+    "createdAt": "2026-04-19T03:15:48.246Z",
+    "updatedAt": "2026-04-19T03:15:48.247Z"
   }
 }
