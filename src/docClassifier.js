@@ -79,7 +79,6 @@ function classifyDocument(fileName, text) {
       if (normalizedFile.includes(kw)) {
         score += 10;
         matchedBy.push(`filename:${kw}`);
-        break;
       }
     }
 
@@ -87,7 +86,7 @@ function classifyDocument(fileName, text) {
       if (normalizedText.includes(kw)) {
         score += 5;
         matchedBy.push(`content:${kw}`);
-        if (matchedBy.length >= 4) break;
+        if (matchedBy.length >= 6) break;
       }
     }
 

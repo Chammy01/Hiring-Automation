@@ -329,6 +329,11 @@ async function processEmail(gmail, message, processedIds) {
   const subject = (headers.find((h) => h.name.toLowerCase() === 'subject') || {}).value || '';
   const from = (headers.find((h) => h.name.toLowerCase() === 'from') || {}).value || '';
 
+  // Use the email's actual received timestamp from Gmail metadata
+  const internalDate = full.data.internalDate
+    ? new Date(Number(full.data.internalDate)).toISOString()
+    : new Date().toISOString();
+
   // Extract sender email address
   const fromEmailMatch = from.match(/<([^>]+)>/) || from.match(/([^\s]+@[^\s]+)/);
   const fromEmail = fromEmailMatch ? fromEmailMatch[1].trim() : from.trim();
@@ -407,7 +412,7 @@ async function processEmail(gmail, message, processedIds) {
   // Submit to API
   try {
     await postDocumentsContent(candidate.id, {
-      submittedAt: new Date().toISOString(),
+      submittedAt: internalDate,
       subject,
       files
     });

@@ -1021,7 +1021,7 @@ function submitCandidateDocumentsContent(candidateId, payload) {
     for (const requiredDoc of candidate.requiredDocuments) {
       const matched = classificationResults.filter((r) => r.docName === requiredDoc);
       if (matched.length > 0) {
-        if (!candidate.documentStatus[requiredDoc] || candidate.documentStatus[requiredDoc] !== 'received') {
+        if (candidate.documentStatus[requiredDoc] !== 'received') {
           candidate.documentStatus[requiredDoc] = 'received';
         }
       }
