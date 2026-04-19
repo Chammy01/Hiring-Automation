@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hiring Automation Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Hiring Automation Dashboard</h1>
+
+      <section class="card">
+        <h2>New Application Intake</h2>
+        <form id="intake-form">
+          <label>Full Name <input name="fullName" required /></label>
+          <label>Email <input name="email" type="email" required /></label>
+          <label>Position <input name="position" required /></label>
+          <button type="submit">Register Candidate</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Candidate Pipeline</h2>
+        <div class="filters">
+          <label>Filter Position <input id="filter-position" placeholder="All positions" /></label>
+          <label>Filter Status <input id="filter-status" placeholder="All statuses" /></label>
+        </div>
+        <div class="interview-defaults">
+          <label>Interview Date <input id="interview-date" type="date" /></label>
+          <label>Interview Time <input id="interview-time" type="time" /></label>
+          <label>Venue <input id="interview-venue" value="Main Office" /></label>
+        </div>
+        <button id="refresh">Refresh</button>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Position</th>
+              <th>Workflow</th>
+              <th>Score</th>
+              <th>Recommendation</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="candidate-rows"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Operations Visibility</h2>
+        <div id="ops-metrics"></div>
+      </section>
+
+      <section class="card" id="details"></section>
+    </main>
+    <script src="/script.js"></script>
+  </body>
+</html>
