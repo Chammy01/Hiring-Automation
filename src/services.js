@@ -103,7 +103,7 @@ function renderTemplate(templateKey, vars = {}, templates = DEFAULT_TEMPLATES) {
 }
 
 function acknowledgementTemplate(deadline, templates = DEFAULT_TEMPLATES) {
-  return renderTemplate('acknowledgment', { deadline }, templates);
+  return renderTemplate('acknowledgement', { deadline }, templates);
 }
 
 function findCandidateByIdentity(state, fullName, email, position) {
