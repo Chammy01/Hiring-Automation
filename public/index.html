@@ -1,81 +1,531 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hiring Automation Dashboard</title>
+    <title>HireFlow — Hiring Automation</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="dashboard-shell">
-      <header class="page-header">
-        <div>
-          <p class="eyebrow">Recruitment Operations</p>
-          <h1>Hiring Automation Dashboard</h1>
-          <p class="subtitle">Track hiring progress, sync candidate sheets, and manage workflow actions.</p>
+
+    <!-- ═══ SIDEBAR ═══ -->
+    <nav class="sidebar" id="sidebar" aria-label="Main navigation">
+      <div class="sidebar-brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span class="sidebar-label brand-name">HireFlow</span>
+      </div>
+
+      <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Collapse sidebar" aria-expanded="true" aria-controls="sidebar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+
+      <ul class="sidebar-nav" role="list">
+        <li>
+          <button class="sidebar-nav-item active" data-page="dashboard" aria-current="page" title="Dashboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            <span class="sidebar-label">Dashboard</span>
+          </button>
+        </li>
+        <li>
+          <button class="sidebar-nav-item" data-page="integrations" title="Integrations">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+            <span class="sidebar-label">Integrations</span>
+          </button>
+        </li>
+        <li>
+          <button class="sidebar-nav-item" data-page="audit" title="Audit Log">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+            </svg>
+            <span class="sidebar-label">Audit Log</span>
+          </button>
+        </li>
+      </ul>
+
+      <div class="sidebar-footer">
+        <button class="sidebar-nav-item theme-toggle-btn" id="theme-toggle" aria-label="Toggle light/dark mode" title="Toggle theme">
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <span class="sidebar-label">Light Mode</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- ═══ MAIN WRAP ═══ -->
+    <div class="main-wrap" id="main-wrap">
+
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 class="page-title" id="page-title">Dashboard</h1>
         </div>
-        <button id="refresh" class="btn btn-secondary">Refresh Data</button>
+        <div class="topbar-right">
+          <button class="cmd-palette-trigger" id="cmd-trigger" aria-label="Open command palette (Ctrl+K)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <span>Search</span>
+            <kbd>⌘K</kbd>
+          </button>
+          <button class="btn btn-secondary" id="refresh" aria-label="Refresh data">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="1 4 1 10 7 10"/>
+              <path d="M3.51 15a9 9 0 1 0 .49-3.65"/>
+            </svg>
+            Refresh
+          </button>
+          <button class="btn" id="new-candidate-btn" aria-label="New candidate (N)" title="New candidate (N)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            New Candidate
+          </button>
+        </div>
       </header>
 
-      <section class="grid two-col">
-        <article class="card">
-          <h2>New Application Intake</h2>
-          <form id="intake-form" class="form-grid">
-            <label>Full Name <input name="fullName" required /></label>
-            <label>Email <input name="email" type="email" required /></label>
-            <label>Position <input name="position" required /></label>
-            <button type="submit" class="btn">Register Candidate</button>
+      <!-- ─── DASHBOARD PAGE ─── -->
+      <main class="page-content" id="page-dashboard" role="main">
+
+        <!-- KPI Cards -->
+        <section class="kpi-grid" aria-label="Key performance indicators">
+          <button class="kpi-card" data-kpi-filter="" aria-label="Total candidates — click to show all">
+            <div class="kpi-icon kpi-icon-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+            </div>
+            <div class="kpi-body">
+              <span class="kpi-value skeleton-inline" id="kpi-total">—</span>
+              <span class="kpi-label">Total Candidates</span>
+            </div>
+          </button>
+          <button class="kpi-card" data-kpi-filter="shortlisted" aria-label="Shortlisted candidates — click to filter">
+            <div class="kpi-icon kpi-icon-purple">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+            </div>
+            <div class="kpi-body">
+              <span class="kpi-value skeleton-inline" id="kpi-shortlisted">—</span>
+              <span class="kpi-label">Shortlisted</span>
+            </div>
+          </button>
+          <button class="kpi-card" data-kpi-filter="interviewScheduled" aria-label="Interviews scheduled — click to filter">
+            <div class="kpi-icon kpi-icon-green">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            </div>
+            <div class="kpi-body">
+              <span class="kpi-value skeleton-inline" id="kpi-interviews">—</span>
+              <span class="kpi-label">Interviews</span>
+            </div>
+          </button>
+          <button class="kpi-card" data-kpi-filter="hired" aria-label="Hired candidates — click to filter">
+            <div class="kpi-icon kpi-icon-teal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+            </div>
+            <div class="kpi-body">
+              <span class="kpi-value skeleton-inline" id="kpi-hired">—</span>
+              <span class="kpi-label">Hired</span>
+            </div>
+          </button>
+          <button class="kpi-card" data-kpi-filter="" data-kpi-special="completion" aria-label="Completion rate">
+            <div class="kpi-icon kpi-icon-amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <line x1="18" y1="20" x2="18" y2="10"/>
+                <line x1="12" y1="20" x2="12" y2="4"/>
+                <line x1="6" y1="20" x2="6" y2="14"/>
+              </svg>
+            </div>
+            <div class="kpi-body">
+              <span class="kpi-value skeleton-inline" id="kpi-completion">—</span>
+              <span class="kpi-label">Completion Rate</span>
+            </div>
+          </button>
+        </section>
+
+        <!-- Pipeline Section -->
+        <section class="card pipeline-card">
+          <div class="card-header">
+            <h2>Candidate Pipeline</h2>
+            <div class="card-actions">
+              <button class="btn btn-sm btn-ghost" id="export-csv" aria-label="Export to CSV">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          <div class="pipeline-filters">
+            <label class="filter-wrap">
+              <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              <select id="filter-position" aria-label="Filter by position">
+                <option value="">All Positions</option>
+              </select>
+            </label>
+            <label class="filter-wrap">
+              <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
+              <select id="filter-status" aria-label="Filter by status">
+                <option value="">All Statuses</option>
+              </select>
+            </label>
+            <label class="filter-wrap filter-search">
+              <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="search" id="search-input" placeholder="Search by name or email…" aria-label="Search candidates" />
+            </label>
+          </div>
+
+          <!-- Bulk toolbar -->
+          <div class="bulk-toolbar" id="bulk-toolbar" hidden aria-live="polite">
+            <span id="bulk-count" class="bulk-count">0 selected</span>
+            <button class="btn btn-sm btn-ghost" id="bulk-export" aria-label="Export selected candidates">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Export
+            </button>
+            <button class="btn btn-sm btn-danger" id="bulk-reject" aria-label="Reject selected candidates">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+              </svg>
+              Reject
+            </button>
+            <button class="btn btn-sm btn-ghost" id="bulk-clear" aria-label="Clear selection">Clear</button>
+          </div>
+
+          <div class="table-wrap" role="region" aria-label="Candidates table" tabindex="0">
+            <table id="candidates-table" aria-label="Candidate pipeline" aria-live="polite">
+              <thead>
+                <tr>
+                  <th class="col-check">
+                    <input type="checkbox" id="select-all" aria-label="Select all candidates" />
+                  </th>
+                  <th class="sortable" data-sort="fullName" aria-sort="none" tabindex="0" role="columnheader">
+                    Name
+                    <svg class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+                    </svg>
+                  </th>
+                  <th class="sortable" data-sort="position" aria-sort="none" tabindex="0" role="columnheader">
+                    Position
+                    <svg class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+                    </svg>
+                  </th>
+                  <th class="sortable" data-sort="workflowState" aria-sort="none" tabindex="0" role="columnheader">
+                    Status
+                    <svg class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+                    </svg>
+                  </th>
+                  <th class="sortable" data-sort="score" aria-sort="none" tabindex="0" role="columnheader">
+                    Score
+                    <svg class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+                    </svg>
+                  </th>
+                  <th>Recommendation</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="candidate-rows"></tbody>
+            </table>
+
+            <div class="empty-state" id="empty-state" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <line x1="23" y1="11" x2="17" y2="11"/><line x1="20" y1="8" x2="20" y2="14"/>
+              </svg>
+              <p>No candidates match your filters.</p>
+              <button class="btn btn-sm" id="clear-filters">Clear Filters</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Ops + Integrations -->
+        <div class="bottom-grid">
+          <section class="card" aria-label="Operations metrics">
+            <div class="card-header">
+              <h2>Operations</h2>
+            </div>
+            <div class="metric-grid" id="ops-metrics"></div>
+          </section>
+
+          <section class="card" aria-label="Integration status">
+            <div class="card-header">
+              <h2>Integrations</h2>
+              <button class="btn btn-sm btn-ghost" id="sync-google-sheets" aria-label="Sync Google Sheets">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polyline points="1 4 1 10 7 10"/>
+                  <path d="M3.51 15a9 9 0 1 0 .49-3.65"/>
+                </svg>
+                Sync Now
+              </button>
+            </div>
+            <div id="integration-status"></div>
+          </section>
+        </div>
+      </main>
+
+      <!-- ─── INTEGRATIONS PAGE ─── -->
+      <main class="page-content" id="page-integrations" role="main" hidden>
+        <section class="card">
+          <div class="card-header"><h2>Integration Settings</h2></div>
+          <div id="integrations-detail"></div>
+        </section>
+      </main>
+
+      <!-- ─── AUDIT PAGE ─── -->
+      <main class="page-content" id="page-audit" role="main" hidden>
+        <section class="card">
+          <div class="card-header"><h2>Audit Log</h2></div>
+          <div class="table-wrap">
+            <table aria-label="Audit log">
+              <thead>
+                <tr>
+                  <th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="audit-rows"></tbody>
+            </table>
+            <div class="empty-state" id="audit-empty" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <p>No audit log entries yet.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+    </div><!-- end main-wrap -->
+
+    <!-- ═══ CANDIDATE DETAIL MODAL ═══ -->
+    <div class="modal-overlay" id="candidate-modal" role="dialog" aria-modal="true" aria-labelledby="modal-candidate-title" aria-hidden="true">
+      <div class="modal-panel modal-lg" role="document">
+        <div class="modal-header">
+          <h2 class="modal-title" id="modal-candidate-title">Candidate Details</h2>
+          <button class="modal-close" id="modal-close" aria-label="Close candidate details">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-tabs" role="tablist" aria-label="Candidate information tabs">
+          <button class="modal-tab active" role="tab" aria-selected="true" aria-controls="tab-overview" data-tab="overview" id="tab-btn-overview">Overview</button>
+          <button class="modal-tab" role="tab" aria-selected="false" aria-controls="tab-documents" data-tab="documents" id="tab-btn-documents">Documents</button>
+          <button class="modal-tab" role="tab" aria-selected="false" aria-controls="tab-compliance" data-tab="compliance" id="tab-btn-compliance">Compliance</button>
+          <button class="modal-tab" role="tab" aria-selected="false" aria-controls="tab-email-log" data-tab="email-log" id="tab-btn-email-log">Email Log</button>
+          <button class="modal-tab" role="tab" aria-selected="false" aria-controls="tab-audit-log" data-tab="audit-log" id="tab-btn-audit-log">Audit Log</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="tab-panel" id="tab-overview" role="tabpanel" aria-labelledby="tab-btn-overview">
+            <div id="modal-overview-content">
+              <div class="skeleton-block"></div>
+            </div>
+          </div>
+          <div class="tab-panel" id="tab-documents" role="tabpanel" aria-labelledby="tab-btn-documents" hidden>
+            <div id="modal-docs-content">
+              <div class="skeleton-block"></div>
+            </div>
+          </div>
+          <div class="tab-panel" id="tab-compliance" role="tabpanel" aria-labelledby="tab-btn-compliance" hidden>
+            <div id="modal-compliance-content">
+              <div class="skeleton-block"></div>
+            </div>
+          </div>
+          <div class="tab-panel" id="tab-email-log" role="tabpanel" aria-labelledby="tab-btn-email-log" hidden>
+            <div id="modal-email-content">
+              <div class="skeleton-block"></div>
+            </div>
+          </div>
+          <div class="tab-panel" id="tab-audit-log" role="tabpanel" aria-labelledby="tab-btn-audit-log" hidden>
+            <div id="modal-audit-content">
+              <div class="skeleton-block"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer" id="modal-actions">
+          <button class="btn btn-ghost" id="modal-close-btn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ INTAKE MODAL ═══ -->
+    <div class="modal-overlay" id="intake-modal" role="dialog" aria-modal="true" aria-labelledby="intake-modal-title" aria-hidden="true">
+      <div class="modal-panel modal-sm" role="document">
+        <div class="modal-header">
+          <h2 class="modal-title" id="intake-modal-title">New Application</h2>
+          <button class="modal-close" data-close-modal="intake-modal" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <form id="intake-form" class="form-stack" novalidate>
+            <div class="form-field">
+              <label for="intake-name">Full Name</label>
+              <input id="intake-name" name="fullName" type="text" placeholder="Jane Doe" autocomplete="name" required />
+            </div>
+            <div class="form-field">
+              <label for="intake-email">Email</label>
+              <input id="intake-email" name="email" type="email" placeholder="jane@example.com" autocomplete="email" required />
+            </div>
+            <div class="form-field">
+              <label for="intake-position">Position</label>
+              <input id="intake-position" name="position" type="text" placeholder="Administrative Aide IV" required list="position-list" />
+              <datalist id="position-list"></datalist>
+            </div>
           </form>
-        </article>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" data-close-modal="intake-modal">Cancel</button>
+          <button class="btn" id="intake-submit" type="button">Register Candidate</button>
+        </div>
+      </div>
+    </div>
 
-        <article class="card">
-          <h2>Integration Upgrades</h2>
-          <div id="integration-status"></div>
-          <button id="sync-google-sheets" class="btn">Sync Google Sheet Now</button>
-        </article>
-      </section>
+    <!-- ═══ INTERVIEW MODAL ═══ -->
+    <div class="modal-overlay" id="interview-modal" role="dialog" aria-modal="true" aria-labelledby="interview-modal-title" aria-hidden="true">
+      <div class="modal-panel modal-sm" role="document">
+        <div class="modal-header">
+          <h2 class="modal-title" id="interview-modal-title">Schedule Interview</h2>
+          <button class="modal-close" data-close-modal="interview-modal" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <form id="interview-form" class="form-stack" novalidate>
+            <div class="form-field">
+              <label for="interview-date">Interview Date</label>
+              <input id="interview-date" type="date" required />
+            </div>
+            <div class="form-field">
+              <label for="interview-time">Time</label>
+              <input id="interview-time" type="time" required />
+            </div>
+            <div class="form-field">
+              <label for="interview-venue">Venue</label>
+              <input id="interview-venue" type="text" value="Main Office" placeholder="Main Office" />
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" data-close-modal="interview-modal">Cancel</button>
+          <button class="btn" id="interview-submit" type="button">Schedule</button>
+        </div>
+      </div>
+    </div>
 
-      <section class="card">
-        <div class="card-header">
-          <h2>Candidate Pipeline</h2>
+    <!-- ═══ REJECT MODAL ═══ -->
+    <div class="modal-overlay" id="reject-modal" role="dialog" aria-modal="true" aria-labelledby="reject-modal-title" aria-hidden="true">
+      <div class="modal-panel modal-sm" role="document">
+        <div class="modal-header">
+          <h2 class="modal-title" id="reject-modal-title">Reject Candidate</h2>
+          <button class="modal-close" data-close-modal="reject-modal" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
         </div>
-        <div class="filters">
-          <label>Filter Position <input id="filter-position" placeholder="All positions" /></label>
-          <label>Filter Status <input id="filter-status" placeholder="All statuses" /></label>
+        <div class="modal-body">
+          <form id="reject-form" class="form-stack" novalidate>
+            <div class="form-field">
+              <label for="reject-reason">Reason for Rejection</label>
+              <textarea id="reject-reason" name="reason" rows="4" placeholder="Enter rejection reason…" required></textarea>
+            </div>
+          </form>
         </div>
-        <div class="interview-defaults">
-          <label>Interview Date <input id="interview-date" type="date" /></label>
-          <label>Interview Time <input id="interview-time" type="time" /></label>
-          <label>Venue <input id="interview-venue" value="Main Office" /></label>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" data-close-modal="reject-modal">Cancel</button>
+          <button class="btn btn-danger" id="reject-submit" type="button">Confirm Reject</button>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Position</th>
-                <th>Workflow</th>
-                <th>Score</th>
-                <th>Recommendation</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="candidate-rows"></tbody>
-          </table>
-        </div>
-      </section>
+      </div>
+    </div>
 
-      <section class="grid two-col">
-        <article class="card">
-          <h2>Operations Visibility</h2>
-          <div id="ops-metrics" class="metric-grid"></div>
-        </article>
-        <article class="card" id="details">
-          <h2>Candidate Details</h2>
-          <p>Select a candidate row to preview details.</p>
-        </article>
-      </section>
-    </main>
+    <!-- ═══ COMMAND PALETTE ═══ -->
+    <div class="cmd-overlay" id="cmd-palette" role="dialog" aria-modal="true" aria-label="Command palette" aria-hidden="true" hidden>
+      <div class="cmd-panel" role="document">
+        <div class="cmd-search-wrap">
+          <svg class="cmd-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            type="text"
+            id="cmd-input"
+            class="cmd-input"
+            placeholder="Type a command or search…"
+            autocomplete="off"
+            aria-label="Command palette input"
+            aria-autocomplete="list"
+            aria-controls="cmd-list"
+            role="combobox"
+            aria-expanded="true"
+          />
+          <kbd class="cmd-esc">Esc</kbd>
+        </div>
+        <ul class="cmd-list" id="cmd-list" role="listbox" aria-label="Commands"></ul>
+        <div class="cmd-footer">
+          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+          <span><kbd>↵</kbd> select</span>
+          <span><kbd>Esc</kbd> close</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TOAST CONTAINER ═══ -->
+    <div class="toast-container" id="toast-container" role="region" aria-label="Notifications" aria-live="assertive" aria-atomic="false"></div>
+
     <script src="/script.js"></script>
   </body>
 </html>
