@@ -155,13 +155,36 @@ Expected response:
 ### 8) Use the app from UI
 
 1. Open dashboard at `http://localhost:3000`
-2. In **New Application Intake**, create a candidate
-3. In **Candidate Pipeline**, use actions:
-   - **Score**
-   - **Shortlist**
-   - **Follow-up**
-   - **Interview**
-4. Check operational metrics in **Operations Visibility**
+2. Click **New Candidate** (or press `N`) to open the intake form
+3. In the **Candidate Pipeline** table, click any row to open the **Candidate Details** modal
+4. Use row action buttons: **Score**, **Shortlist**, **Follow-up**, **Schedule** (interview), **Hire**, **Reject**
+5. Use the **bulk select** checkboxes to select multiple candidates → bulk export CSV or bulk reject
+6. Click **KPI cards** to instantly filter the table by that status
+7. Use the **position** and **status** dropdowns to filter; type in the **search** box to find by name/email
+8. Click table column headers to **sort** (state persists in URL + localStorage)
+9. Open the **Integrations** page from the sidebar to view and sync Google Sheets
+10. Open the **Audit Log** page from the sidebar to review all action history
+11. Press `⌘K` (or `Ctrl+K`) to open the **command palette** for quick navigation
+
+## UI Keyboard Shortcuts
+
+| Shortcut       | Action                        |
+|----------------|-------------------------------|
+| `N`            | Open New Candidate form       |
+| `R`            | Refresh data                  |
+| `/`            | Focus candidate search        |
+| `Ctrl+K` / `⌘K`| Open command palette          |
+| `Esc`          | Close open modal or palette   |
+
+### Candidate Details Modal Tabs
+
+| Tab         | Content                                                |
+|-------------|--------------------------------------------------------|
+| Overview    | Name, email, position, status, score, interview info   |
+| Documents   | Per-document status with progress bars                 |
+| Compliance  | Compliance badge + disqualification reasons            |
+| Email Log   | Inbound/outbound email events for this candidate       |
+| Audit Log   | Workflow change history for this candidate             |
 
 ### 9) Use secured APIs (when testing with curl/Postman)
 
