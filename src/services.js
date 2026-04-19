@@ -1,5 +1,5 @@
 const crypto = require('node:crypto');
-const { readStore, updateStore, normalizeState } = require('./store');
+const { readStore, updateStore, normalizeState, makeDefaultAppSettings } = require('./store');
 const {
   WORKFLOW_STATES,
   TRANSITIONS,
@@ -24,6 +24,10 @@ let latestGoogleSheetsSyncReason = '';
 
 function getGoogleSheetsState(state) {
   return (((state.settings || {}).integrations || {}).googleSheets || {});
+}
+
+function getStateAppSettings(state) {
+  return Object.assign({}, makeDefaultAppSettings(), (state.settings && state.settings.appSettings) || {});
 }
 
 function getIntegrationsStatus() {
@@ -165,13 +169,14 @@ function addAuditLog(state, action, candidateId, metadata = {}) {
 }
 
 function queueEmailEvent(state, eventInput) {
+  const appSettings = getStateAppSettings(state);
   const event = {
     id: crypto.randomUUID(),
     timestamp: nowIso(),
     candidateId: eventInput.candidateId || null,
     direction: eventInput.direction || 'outbound',
     to: eventInput.to || null,
-    from: eventInput.from || config.fromEmail,
+    from: eventInput.from || appSettings.companyEmail,
     subject: eventInput.subject,
     bodyEncrypted: encryptText(eventInput.body || ''),
     status: eventInput.simulateFailure ? EMAIL_STATUSES.FAILED : EMAIL_STATUSES.SENT,
@@ -287,8 +292,9 @@ function createCandidateFromApplication(payload) {
     transitionCandidate(candidate, WORKFLOW_STATES.ACK_SENT);
     transitionCandidate(candidate, WORKFLOW_STATES.DOCS_PENDING);
 
+    const appSettings = getStateAppSettings(state);
     const ackSubject = `Application Received: ${candidate.position}`;
-    const ackBody = acknowledgementTemplate(config.defaultDeadline, state.templates);
+    const ackBody = acknowledgementTemplate(appSettings.hiringDeadline, state.templates);
     const event = queueEmailEvent(state, {
       candidateId: candidate.id,
       to: candidate.email,
@@ -326,13 +332,13 @@ function attachmentMatchesDoc(attachment, docName) {
   return keys.some((key) => a.includes(key));
 }
 
-function applyCompliance(candidate, submittedAt, subject) {
+function applyCompliance(candidate, submittedAt, subject, deadline) {
   const expectedSubject = `Application for ${candidate.position}`;
-  const deadline = new Date(config.defaultDeadline);
+  const deadlineDate = new Date(deadline || config.defaultDeadline);
   const actualDate = submittedAt ? new Date(submittedAt) : new Date();
 
   candidate.compliance.subjectFormatValid = subject === expectedSubject;
-  candidate.compliance.submittedBeforeDeadline = actualDate <= deadline;
+  candidate.compliance.submittedBeforeDeadline = actualDate <= deadlineDate;
   candidate.compliance.disqualified =
     !candidate.compliance.subjectFormatValid || !candidate.compliance.submittedBeforeDeadline;
 
@@ -341,7 +347,7 @@ function applyCompliance(candidate, submittedAt, subject) {
     reasons.push(`Invalid subject format. Expected \"${expectedSubject}\"`);
   }
   if (!candidate.compliance.submittedBeforeDeadline) {
-    reasons.push(`Submitted after deadline ${deadline.toISOString()}`);
+    reasons.push(`Submitted after deadline ${deadlineDate.toISOString()}`);
   }
   candidate.compliance.reasons = reasons;
 }
@@ -369,7 +375,7 @@ function submitCandidateDocuments(candidateId, payload) {
       }
     }
 
-    applyCompliance(candidate, payload.submittedAt, payload.subject);
+    applyCompliance(candidate, payload.submittedAt, payload.subject, getStateAppSettings(state).hiringDeadline);
 
     const allReceived = Object.values(candidate.documentStatus).every((status) => status === 'received');
 
@@ -390,7 +396,7 @@ function submitCandidateDocuments(candidateId, payload) {
         'missingDocs',
         {
           fullName: candidate.fullName,
-          deadline: config.defaultDeadline,
+          deadline: getStateAppSettings(state).hiringDeadline,
           missingList: missing.join('\n')
         },
         state.templates
@@ -669,7 +675,7 @@ function updateCandidateStatus(candidateId, action, payload = {}) {
         'missingDocs',
         {
           fullName: candidate.fullName,
-          deadline: config.defaultDeadline,
+          deadline: getStateAppSettings(state).hiringDeadline,
           missingList: missing.join('\n') || 'No missing items recorded.'
         },
         state.templates
@@ -727,7 +733,7 @@ function processInboundEmail(payload) {
     queueEmailEvent(state, {
       direction: 'inbound',
       from: fromEmail,
-      to: config.mailboxAddress,
+      to: getStateAppSettings(state).mailboxAddress,
       subject,
       body
     });
@@ -1028,7 +1034,7 @@ function submitCandidateDocumentsContent(candidateId, payload) {
     }
 
     if (payload.subject) {
-      applyCompliance(candidate, payload.submittedAt, payload.subject);
+      applyCompliance(candidate, payload.submittedAt, payload.subject, getStateAppSettings(state).hiringDeadline);
     }
 
     const allReceived = Object.values(candidate.documentStatus).every((status) => status === 'received');
@@ -1064,6 +1070,48 @@ function submitCandidateDocumentsContent(candidateId, payload) {
   return result;
 }
 
+function getAppSettings() {
+  return readStore().settings.appSettings;
+}
+
+const ALLOWED_APP_SETTINGS_KEYS = [
+  'hiringDeadline',
+  'companyEmail',
+  'mailboxAddress',
+  'companyName',
+  'replyToEmail',
+  'hiringManagerName',
+  'applicationOpenDate',
+  'timezone',
+  'autoResponseSubject',
+  'interviewWindowStart',
+  'interviewWindowEnd',
+  'maxApplicationsPerRole',
+  'allowedFileTypes',
+  'maxUploadSizeMb',
+  'notifyNewApplication',
+  'reminderCadenceDays',
+  'careerPageBanner',
+  'defaultJobVisibility',
+  'dataRetentionDays'
+];
+
+function updateAppSettings(updates = {}) {
+  return updateStore((state) => {
+    const current = state.settings.appSettings || makeDefaultAppSettings();
+    const next = { ...current };
+    for (const key of ALLOWED_APP_SETTINGS_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(updates, key)) {
+        next[key] = updates[key];
+      }
+    }
+    state.settings.appSettings = next;
+    addAuditLog(state, 'settings.app_settings_updated', null, { keys: Object.keys(updates) });
+    state.__result = state.settings.appSettings;
+    return state;
+  }).__result;
+}
+
 module.exports = {
   createCandidateFromApplication,
   submitCandidateDocuments,
@@ -1075,6 +1123,8 @@ module.exports = {
   calculateRecommendation,
   updateScoringWeights,
   getScoringWeights,
+  getAppSettings,
+  updateAppSettings,
   updateCandidateStatus,
   retryEmailEvent,
   processInboundEmail,

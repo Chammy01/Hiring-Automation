@@ -99,3 +99,81 @@ test('documents/content endpoint returns 400 for missing files field', async () 
 
   assert.equal(result.status, 400);
 });
+
+test('settings GET returns default app settings', async () => {
+  const res = await hr(request(app).get('/api/settings'));
+  assert.equal(res.status, 200);
+  assert.ok(typeof res.body.hiringDeadline === 'string');
+  assert.ok(typeof res.body.companyEmail === 'string');
+  assert.ok(typeof res.body.mailboxAddress === 'string');
+  assert.ok(typeof res.body.companyName === 'string');
+  assert.ok(typeof res.body.notifyNewApplication === 'boolean');
+});
+
+test('settings PUT updates persisted values', async () => {
+  const updated = await hr(request(app).put('/api/settings')).send({
+    hiringDeadline: '2027-06-30T23:59:59.000Z',
+    companyEmail: 'newhiring@example.com',
+    companyName: 'Test Corp',
+    maxApplicationsPerRole: 50
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.hiringDeadline, '2027-06-30T23:59:59.000Z');
+  assert.equal(updated.body.companyEmail, 'newhiring@example.com');
+  assert.equal(updated.body.companyName, 'Test Corp');
+  assert.equal(updated.body.maxApplicationsPerRole, 50);
+
+  const fetched = await hr(request(app).get('/api/settings'));
+  assert.equal(fetched.status, 200);
+  assert.equal(fetched.body.hiringDeadline, '2027-06-30T23:59:59.000Z');
+  assert.equal(fetched.body.companyEmail, 'newhiring@example.com');
+});
+
+test('settings PUT rejects invalid email for companyEmail', async () => {
+  const res = await hr(request(app).put('/api/settings')).send({
+    companyEmail: 'not-an-email'
+  });
+  assert.equal(res.status, 400);
+});
+
+test('intake ack email uses deadline from settings', async () => {
+  await hr(request(app).put('/api/settings')).send({
+    hiringDeadline: '2099-01-01T00:00:00.000Z',
+    companyEmail: 'custom@example.com'
+  });
+
+  const intake = await hr(request(app).post('/api/applications/intake')).send({
+    fullName: 'Settings Test',
+    email: 'settingstest@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+  assert.equal(intake.status, 201);
+
+  const events = await hr(request(app).get('/api/email-events'));
+  const ack = events.body.items.find((e) => e.candidateId === intake.body.candidate.id && e.direction === 'outbound');
+  assert.ok(ack, 'outbound ack event should exist');
+  assert.equal(ack.from, 'custom@example.com');
+  assert.ok(ack.body.includes('2099'), 'ack body should contain the configured deadline year');
+});
+
+test('compliance uses deadline from settings', async () => {
+  await hr(request(app).put('/api/settings')).send({
+    hiringDeadline: '2099-12-31T23:59:59.000Z'
+  });
+
+  const intake = await hr(request(app).post('/api/applications/intake')).send({
+    fullName: 'Compliance Test',
+    email: 'compliance@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+  assert.equal(intake.status, 201);
+  const candidateId = intake.body.candidate.id;
+
+  const docs = await hr(request(app).post(`/api/candidates/${candidateId}/documents`)).send({
+    attachments: [],
+    subject: 'Application for Administrative Aide IV (Clerk II)',
+    submittedAt: new Date().toISOString()
+  });
+  assert.equal(docs.status, 200);
+  assert.equal(docs.body.compliance.submittedBeforeDeadline, true);
+});

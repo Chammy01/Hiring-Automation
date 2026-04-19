@@ -19,6 +19,27 @@
       "trainings": 10,
       "awards": 5
     },
+    "appSettings": {
+      "hiringDeadline": "2026-04-07T23:59:59+08:00",
+      "companyEmail": "hr@company.local",
+      "mailboxAddress": "applications@company.local",
+      "companyName": "Our Office",
+      "replyToEmail": "",
+      "hiringManagerName": "",
+      "applicationOpenDate": "",
+      "timezone": "Asia/Manila",
+      "autoResponseSubject": "Application Received: {{position}}",
+      "interviewWindowStart": "08:00",
+      "interviewWindowEnd": "17:00",
+      "maxApplicationsPerRole": 0,
+      "allowedFileTypes": "pdf,doc,docx",
+      "maxUploadSizeMb": 10,
+      "notifyNewApplication": true,
+      "reminderCadenceDays": 3,
+      "careerPageBanner": "",
+      "defaultJobVisibility": "public",
+      "dataRetentionDays": 365
+    },
     "integrations": {
       "googleSheets": {
         "spreadsheetId": "",

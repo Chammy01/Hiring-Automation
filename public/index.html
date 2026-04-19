@@ -46,6 +46,15 @@
           </button>
         </li>
         <li>
+          <button class="sidebar-nav-item" data-page="settings" title="Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            <span class="sidebar-label">Settings</span>
+          </button>
+        </li>
+        <li>
           <button class="sidebar-nav-item" data-page="audit" title="Audit Log">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -316,6 +325,143 @@
           <div class="card-header"><h2>Integration Settings</h2></div>
           <div id="integrations-detail"></div>
         </section>
+      </main>
+
+      <!-- ─── SETTINGS PAGE ─── -->
+      <main class="page-content" id="page-settings" role="main" hidden>
+        <form id="settings-form" novalidate>
+          <section class="card" style="margin-bottom:1.5rem">
+            <div class="card-header"><h2>Hiring Configuration</h2></div>
+            <div class="form-stack" style="padding:1.25rem 1.5rem">
+              <div class="form-field">
+                <label for="s-hiringDeadline">Application Deadline</label>
+                <input id="s-hiringDeadline" name="hiringDeadline" type="datetime-local" />
+                <span class="form-hint">ISO-8601 datetime (e.g. 2026-12-31T23:59). All compliance checks use this date.</span>
+              </div>
+              <div class="form-field">
+                <label for="s-applicationOpenDate">Application Open Date</label>
+                <input id="s-applicationOpenDate" name="applicationOpenDate" type="datetime-local" />
+                <span class="form-hint">Optional start date for accepting applications.</span>
+              </div>
+              <div class="form-field">
+                <label for="s-maxApplicationsPerRole">Max Applications Per Role</label>
+                <input id="s-maxApplicationsPerRole" name="maxApplicationsPerRole" type="number" min="0" step="1" placeholder="0 = unlimited" />
+              </div>
+              <div class="form-field">
+                <label for="s-defaultJobVisibility">Default Job Visibility</label>
+                <select id="s-defaultJobVisibility" name="defaultJobVisibility">
+                  <option value="public">Public</option>
+                  <option value="private">Private</option>
+                  <option value="draft">Draft</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section class="card" style="margin-bottom:1.5rem">
+            <div class="card-header"><h2>Company &amp; Contact</h2></div>
+            <div class="form-stack" style="padding:1.25rem 1.5rem">
+              <div class="form-field">
+                <label for="s-companyName">Company / Office Name</label>
+                <input id="s-companyName" name="companyName" type="text" placeholder="Our Office" />
+              </div>
+              <div class="form-field">
+                <label for="s-companyEmail">Company Email (From)</label>
+                <input id="s-companyEmail" name="companyEmail" type="email" placeholder="hr@example.com" />
+                <span class="form-hint">Address used as the sender of outbound emails.</span>
+              </div>
+              <div class="form-field">
+                <label for="s-replyToEmail">Reply-To Email</label>
+                <input id="s-replyToEmail" name="replyToEmail" type="email" placeholder="replies@example.com" />
+              </div>
+              <div class="form-field">
+                <label for="s-mailboxAddress">Inbound Mailbox Address</label>
+                <input id="s-mailboxAddress" name="mailboxAddress" type="email" placeholder="applications@example.com" />
+                <span class="form-hint">Address where candidate applications are received.</span>
+              </div>
+              <div class="form-field">
+                <label for="s-hiringManagerName">Hiring Manager Name / Title</label>
+                <input id="s-hiringManagerName" name="hiringManagerName" type="text" placeholder="Jane Doe, HR Officer" />
+              </div>
+              <div class="form-field">
+                <label for="s-timezone">Timezone</label>
+                <input id="s-timezone" name="timezone" type="text" placeholder="Asia/Manila" />
+                <span class="form-hint">IANA timezone identifier used for deadline calculations.</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="card" style="margin-bottom:1.5rem">
+            <div class="card-header"><h2>Email &amp; Notifications</h2></div>
+            <div class="form-stack" style="padding:1.25rem 1.5rem">
+              <div class="form-field">
+                <label for="s-autoResponseSubject">Auto-Response Email Subject</label>
+                <input id="s-autoResponseSubject" name="autoResponseSubject" type="text" placeholder="Application Received: {{position}}" />
+              </div>
+              <div class="form-field">
+                <label for="s-reminderCadenceDays">Reminder Cadence (days)</label>
+                <input id="s-reminderCadenceDays" name="reminderCadenceDays" type="number" min="1" step="1" placeholder="3" />
+                <span class="form-hint">Send follow-up reminders every N days after documents are pending.</span>
+              </div>
+              <div class="form-field checkbox-field">
+                <label class="checkbox-label">
+                  <input id="s-notifyNewApplication" name="notifyNewApplication" type="checkbox" />
+                  <span>Notify on new application</span>
+                </label>
+                <span class="form-hint">Send internal alert when a new candidate is registered.</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="card" style="margin-bottom:1.5rem">
+            <div class="card-header"><h2>Interview Scheduling</h2></div>
+            <div class="form-stack" style="padding:1.25rem 1.5rem">
+              <div class="form-field">
+                <label for="s-interviewWindowStart">Interview Window Start</label>
+                <input id="s-interviewWindowStart" name="interviewWindowStart" type="time" />
+              </div>
+              <div class="form-field">
+                <label for="s-interviewWindowEnd">Interview Window End</label>
+                <input id="s-interviewWindowEnd" name="interviewWindowEnd" type="time" />
+              </div>
+            </div>
+          </section>
+
+          <section class="card" style="margin-bottom:1.5rem">
+            <div class="card-header"><h2>Document Uploads</h2></div>
+            <div class="form-stack" style="padding:1.25rem 1.5rem">
+              <div class="form-field">
+                <label for="s-allowedFileTypes">Allowed File Types</label>
+                <input id="s-allowedFileTypes" name="allowedFileTypes" type="text" placeholder="pdf,doc,docx" />
+                <span class="form-hint">Comma-separated list of file extensions (no dots).</span>
+              </div>
+              <div class="form-field">
+                <label for="s-maxUploadSizeMb">Max Upload Size (MB)</label>
+                <input id="s-maxUploadSizeMb" name="maxUploadSizeMb" type="number" min="1" step="1" placeholder="10" />
+              </div>
+            </div>
+          </section>
+
+          <section class="card" style="margin-bottom:1.5rem">
+            <div class="card-header"><h2>Career Page &amp; Retention</h2></div>
+            <div class="form-stack" style="padding:1.25rem 1.5rem">
+              <div class="form-field">
+                <label for="s-careerPageBanner">Career Page Banner Text / CTA</label>
+                <textarea id="s-careerPageBanner" name="careerPageBanner" rows="3" placeholder="Join our team! Applications are open until…"></textarea>
+              </div>
+              <div class="form-field">
+                <label for="s-dataRetentionDays">Data Retention Period (days)</label>
+                <input id="s-dataRetentionDays" name="dataRetentionDays" type="number" min="1" step="1" placeholder="365" />
+                <span class="form-hint">Auto-archive candidate records after this many days.</span>
+              </div>
+            </div>
+          </section>
+
+          <div style="display:flex;gap:.75rem;justify-content:flex-end;padding-bottom:2rem">
+            <button type="button" class="btn btn-ghost" id="settings-reset">Reset to Saved</button>
+            <button type="submit" class="btn" id="settings-save">Save Settings</button>
+          </div>
+        </form>
       </main>
 
       <!-- ─── AUDIT PAGE ─── -->
