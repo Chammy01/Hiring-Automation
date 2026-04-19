@@ -1,18 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const request = require('supertest');
 const { app } = require('../src/server');
+const { resetStore } = require('./helpers');
 
-const storePath = path.resolve('data/store.json');
-
-function resetStore() {
-  fs.writeFileSync(
-    storePath,
-    JSON.stringify({ candidates: [], emailEvents: [], auditLogs: [] }, null, 2)
-  );
-}
+test.beforeEach(() => resetStore());
+test.after(() => resetStore());
 
 test('health endpoint is reachable', async () => {
   const response = await request(app).get('/api/health');
@@ -21,7 +14,6 @@ test('health endpoint is reachable', async () => {
 });
 
 test('intake endpoint creates candidate', async () => {
-  resetStore();
   const response = await request(app).post('/api/applications/intake').send({
     fullName: 'Mia Santos',
     email: 'mia@example.com',

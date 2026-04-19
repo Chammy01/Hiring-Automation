@@ -1,19 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+const { resetStore } = require('./helpers');
 
-const storePath = path.resolve('data/store.json');
-
-function resetStore() {
-  fs.writeFileSync(
-    storePath,
-    JSON.stringify({ candidates: [], emailEvents: [], auditLogs: [] }, null, 2)
-  );
-}
+test.beforeEach(() => resetStore());
+test.after(() => resetStore());
 
 test('scoring returns transparent recommendation output', () => {
-  resetStore();
   const {
     createCandidateFromApplication,
     extractCandidateProfile,

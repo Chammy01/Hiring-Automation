@@ -34,7 +34,14 @@ function writeStore(state) {
 function updateStore(updater) {
   const state = readStore();
   const next = updater(state) || state;
+  const result = next.__result;
+  if (Object.prototype.hasOwnProperty.call(next, '__result')) {
+    delete next.__result;
+  }
   writeStore(next);
+  if (result !== undefined) {
+    next.__result = result;
+  }
   return next;
 }
 
