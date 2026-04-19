@@ -5,7 +5,8 @@ const {
   TRANSITIONS,
   POSITION_CHECKLISTS,
   DEFAULT_REQUIRED_DOCUMENTS,
-  SCORING_WEIGHTS
+  SCORING_WEIGHTS,
+  SCORING_MULTIPLIERS
 } = require('./constants');
 const { config } = require('./config');
 
@@ -333,7 +334,9 @@ function calculateRecommendation(candidateId) {
             : 0;
 
     const trainingsScore =
-      candidate.trainings === 'With trainings' ? SCORING_WEIGHTS.trainings : Math.round(SCORING_WEIGHTS.trainings * 0.2);
+      candidate.trainings === 'With trainings'
+        ? SCORING_WEIGHTS.trainings
+        : Math.round(SCORING_WEIGHTS.trainings * SCORING_MULTIPLIERS.TRAININGS_PARTIAL_CREDIT);
     const awardsScore = candidate.awards === 'With awards' ? SCORING_WEIGHTS.awards : 0;
 
     const total =

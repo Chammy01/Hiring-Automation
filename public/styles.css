@@ -73,3 +73,10 @@ td {
   font-size: 12px;
   padding: 6px 8px;
 }
+
+.interview-defaults {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}

@@ -1,7 +1,7 @@
 {
   "name": "hiring-automation",
   "version": "1.0.0",
-  "description": "Integrating a automation on Hiring",
+  "description": "Integrating an automation on hiring",
   "main": "src/server.js",
   "scripts": {
     "test": "node --test tests/*.test.js",

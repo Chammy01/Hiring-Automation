@@ -1,5 +1,12 @@
 const candidateRows = document.getElementById('candidate-rows');
 const details = document.getElementById('details');
+const interviewDateInput = document.getElementById('interview-date');
+const interviewTimeInput = document.getElementById('interview-time');
+const interviewVenueInput = document.getElementById('interview-venue');
+
+const today = new Date().toISOString().slice(0, 10);
+if (!interviewDateInput.value) interviewDateInput.value = today;
+if (!interviewTimeInput.value) interviewTimeInput.value = '10:00';
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -88,12 +95,13 @@ candidateRows.addEventListener('click', async (event) => {
       await loadCandidates();
       await loadDetails(id);
     } else if (action === 'interview') {
-      const date = prompt('Interview date (YYYY-MM-DD):', '2026-04-20');
-      const time = prompt('Interview time:', '10:00 AM');
+      const date = interviewDateInput.value;
+      const time = interviewTimeInput.value;
+      const venue = interviewVenueInput.value || 'Main Office';
       if (!date || !time) return;
       await api(`/api/candidates/${id}/interview`, {
         method: 'POST',
-        body: JSON.stringify({ date, time, venue: 'Main Office' })
+        body: JSON.stringify({ date, time, venue })
       });
       await loadCandidates();
       await loadDetails(id);
