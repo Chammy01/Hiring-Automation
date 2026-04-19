@@ -1,8 +1,11 @@
 const candidateRows = document.getElementById('candidate-rows');
 const details = document.getElementById('details');
+const opsMetrics = document.getElementById('ops-metrics');
 const interviewDateInput = document.getElementById('interview-date');
 const interviewTimeInput = document.getElementById('interview-time');
 const interviewVenueInput = document.getElementById('interview-venue');
+const filterPositionInput = document.getElementById('filter-position');
+const filterStatusInput = document.getElementById('filter-status');
 
 const today = new Date().toISOString().slice(0, 10);
 if (!interviewDateInput.value) interviewDateInput.value = today;
@@ -10,7 +13,10 @@ if (!interviewTimeInput.value) interviewTimeInput.value = '10:00';
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-role': 'hr'
+    },
     ...options
   });
   if (!response.ok) {
@@ -20,8 +26,32 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+async function loadOps() {
+  const [dashboard, analytics, retry] = await Promise.all([
+    api('/api/dashboard'),
+    api('/api/analytics'),
+    api('/api/retry-queue')
+  ]);
+
+  opsMetrics.innerHTML = `
+    <p><b>Total candidates:</b> ${dashboard.totals.candidates}</p>
+    <p><b>Retry queue:</b> ${dashboard.totals.retryQueue} (${retry.items.filter((x) => x.status === 'pending').length} pending)</p>
+    <p><b>Verification queue:</b> ${dashboard.totals.verificationQueue}</p>
+    <p><b>Completion rate:</b> ${analytics.rates.completionRate}%</p>
+    <p><b>Average processing time:</b> ${analytics.averageProcessingHours} hours</p>
+  `;
+}
+
+function createActionButton(action, id, label) {
+  return `<button data-action="${action}" data-id="${id}">${label}</button>`;
+}
+
 async function loadCandidates() {
-  const data = await api('/api/candidates');
+  const params = new URLSearchParams();
+  if (filterPositionInput.value.trim()) params.set('position', filterPositionInput.value.trim());
+  if (filterStatusInput.value.trim()) params.set('status', filterStatusInput.value.trim());
+
+  const data = await api(`/api/candidates?${params.toString()}`);
   candidateRows.innerHTML = '';
 
   for (const candidate of data.items) {
@@ -34,9 +64,10 @@ async function loadCandidates() {
       <td>${candidate.recommendation.rankLabel}</td>
       <td>
         <div class="actions">
-          <button data-action="score" data-id="${candidate.id}">Score</button>
-          <button data-action="shortlist" data-id="${candidate.id}">Shortlist</button>
-          <button data-action="interview" data-id="${candidate.id}">Interview</button>
+          ${createActionButton('score', candidate.id, 'Score')}
+          ${createActionButton('shortlist', candidate.id, 'Shortlist')}
+          ${createActionButton('followup', candidate.id, 'Follow-up')}
+          ${createActionButton('interview', candidate.id, 'Interview')}
         </div>
       </td>
     `;
@@ -50,13 +81,28 @@ async function loadDetails(id) {
     <h2>${candidate.fullName}</h2>
     <p><b>Email:</b> ${candidate.email}</p>
     <p><b>Status:</b> ${candidate.workflowState}</p>
+    <p><b>Documents:</b> ${Object.entries(candidate.documentStatus)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(' | ')}</p>
     <p><b>Compliance:</b> ${candidate.compliance.disqualified ? `Disqualified (${candidate.compliance.reasons.join('; ')})` : 'Compliant'}</p>
     <p><b>Recommendation:</b> ${candidate.recommendation.reason}</p>
   `;
 }
 
+async function reloadAll() {
+  await Promise.all([loadCandidates(), loadOps()]);
+}
+
 document.getElementById('refresh').addEventListener('click', () => {
-  loadCandidates().catch((error) => alert(error.message));
+  reloadAll().catch((error) => alert(error.message));
+});
+
+filterPositionInput.addEventListener('input', () => {
+  loadCandidates().catch(() => {});
+});
+
+filterStatusInput.addEventListener('input', () => {
+  loadCandidates().catch(() => {});
 });
 
 document.getElementById('intake-form').addEventListener('submit', async (event) => {
@@ -72,7 +118,7 @@ document.getElementById('intake-form').addEventListener('submit', async (event) 
       })
     });
     event.target.reset();
-    await loadCandidates();
+    await reloadAll();
   } catch (error) {
     alert(error.message);
   }
@@ -88,12 +134,10 @@ candidateRows.addEventListener('click', async (event) => {
   try {
     if (action === 'score') {
       await api(`/api/candidates/${id}/score`, { method: 'POST' });
-      await loadCandidates();
-      await loadDetails(id);
     } else if (action === 'shortlist') {
       await api(`/api/candidates/${id}/shortlist`, { method: 'POST' });
-      await loadCandidates();
-      await loadDetails(id);
+    } else if (action === 'followup') {
+      await api(`/api/candidates/${id}/follow-up`, { method: 'POST' });
     } else if (action === 'interview') {
       const date = interviewDateInput.value;
       const time = interviewTimeInput.value;
@@ -103,9 +147,9 @@ candidateRows.addEventListener('click', async (event) => {
         method: 'POST',
         body: JSON.stringify({ date, time, venue })
       });
-      await loadCandidates();
-      await loadDetails(id);
     }
+    await reloadAll();
+    await loadDetails(id);
   } catch (error) {
     alert(error.message);
   }
@@ -120,6 +164,6 @@ candidateRows.addEventListener('mouseover', (event) => {
   }
 });
 
-loadCandidates().catch((error) => {
+reloadAll().catch((error) => {
   details.innerHTML = `<p>${error.message}</p>`;
 });

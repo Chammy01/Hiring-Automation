@@ -1,14 +1,17 @@
 const crypto = require('node:crypto');
-const { readStore, updateStore } = require('./store');
+const { readStore, updateStore, normalizeState } = require('./store');
 const {
   WORKFLOW_STATES,
   TRANSITIONS,
   POSITION_CHECKLISTS,
   DEFAULT_REQUIRED_DOCUMENTS,
   SCORING_WEIGHTS,
-  SCORING_MULTIPLIERS
+  SCORING_MULTIPLIERS,
+  EMAIL_STATUSES,
+  DEFAULT_TEMPLATES
 } = require('./constants');
 const { config } = require('./config');
+const { encryptText, decryptText } = require('./security');
 
 function nowIso() {
   return new Date().toISOString();
@@ -43,16 +46,40 @@ function addAuditLog(state, action, candidateId, metadata = {}) {
   });
 }
 
-function addEmailEvent(state, candidateId, direction, subject, body) {
-  state.emailEvents.push({
+function queueEmailEvent(state, eventInput) {
+  const event = {
     id: crypto.randomUUID(),
     timestamp: nowIso(),
-    candidateId,
-    direction,
-    subject,
-    body,
-    status: 'sent'
-  });
+    candidateId: eventInput.candidateId || null,
+    direction: eventInput.direction || 'outbound',
+    to: eventInput.to || null,
+    from: eventInput.from || config.fromEmail,
+    subject: eventInput.subject,
+    bodyEncrypted: encryptText(eventInput.body || ''),
+    status: eventInput.simulateFailure ? EMAIL_STATUSES.FAILED : EMAIL_STATUSES.SENT,
+    retries: Number(eventInput.retries || 0),
+    lastError: eventInput.simulateFailure ? 'Simulated send failure' : ''
+  };
+  state.emailEvents.push(event);
+
+  if (event.status === EMAIL_STATUSES.FAILED) {
+    state.retryQueue.push({
+      id: crypto.randomUUID(),
+      emailEventId: event.id,
+      timestamp: nowIso(),
+      status: 'pending',
+      error: event.lastError
+    });
+  }
+
+  return event;
+}
+
+function decryptEmailEvent(event) {
+  return {
+    ...event,
+    body: decryptText(event.bodyEncrypted)
+  };
 }
 
 function assertTransition(from, to) {
@@ -70,8 +97,13 @@ function transitionCandidate(candidate, toState) {
   candidate.updatedAt = nowIso();
 }
 
-function acknowledgementTemplate(deadline) {
-  return `Dear Applicant,\n\nThank you for your interest in applying to our Office.\n\nIn view that the position you are applying for is a regular position, you are hereby requested to submit the following documentary requirements on or before ${deadline}:\n\n• Letter of Intent\n• One (1) copy of a fully accomplished Personal Data Sheet (PDS) and Work Experience Sheet (WES) (CSC Form No. 212, s. 2025)\n(Forms may be downloaded from the Civil Service Commission website)\n• One (1) copy of relevant training/seminar certificates (if applicable)\n• One (1) copy of awards received from your last promotion (if applicable)\n• One (1) copy of your latest Individual Performance Commitment and Review (IPCR) (if applicable)\n• One (1) copy of proof of CSC Eligibility\n \nKindly submit the above documents through email using the prescribed subject format:\n\nApplication for (Position and Title)\n(ex: Application for Administrative Assistant I (Computer Operator I))\n\nPlease be advised that non-compliance with the required documents, failure to follow the prescribed subject format, or submission beyond the stated deadline shall result in automatic disqualification from the selection process.\n\nThis is an automated reminder. If this has already been taken care of, please disregard. We kindly ask that you reply to acknowledge receipt of this message.\n\nThank you.\nVery truly yours,`;
+function renderTemplate(templateKey, vars = {}, templates = DEFAULT_TEMPLATES) {
+  const source = templates[templateKey] || '';
+  return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => String(vars[key] || ''));
+}
+
+function acknowledgementTemplate(deadline, templates = DEFAULT_TEMPLATES) {
+  return renderTemplate('acknowledgment', { deadline }, templates);
 }
 
 function findCandidateByIdentity(state, fullName, email, position) {
@@ -138,15 +170,21 @@ function createCandidateFromApplication(payload) {
     transitionCandidate(candidate, WORKFLOW_STATES.DOCS_PENDING);
 
     const ackSubject = `Application Received: ${candidate.position}`;
-    const ackBody = acknowledgementTemplate('07 April 2026');
-    addEmailEvent(state, candidate.id, 'outbound', ackSubject, ackBody);
-    candidate.emailSent = true;
+    const ackBody = acknowledgementTemplate(config.defaultDeadline, state.templates);
+    const event = queueEmailEvent(state, {
+      candidateId: candidate.id,
+      to: candidate.email,
+      subject: ackSubject,
+      body: ackBody,
+      simulateFailure: Boolean(payload.simulateAckFailure)
+    });
+    candidate.emailSent = event.status === EMAIL_STATUSES.SENT;
 
     state.candidates.push(candidate);
     addAuditLog(state, 'candidate.created', candidate.id, { source: 'email_intake' });
-    addAuditLog(state, 'email.ack_sent', candidate.id, { subject: ackSubject });
+    addAuditLog(state, 'email.ack_sent', candidate.id, { subject: ackSubject, status: event.status });
 
-    state.__result = { duplicate: false, candidate };
+    state.__result = { duplicate: false, candidate, ackStatus: event.status };
     return state;
   }).__result;
 }
@@ -196,9 +234,19 @@ function submitCandidateDocuments(candidateId, payload) {
     }
 
     const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+    const invalidAttachments = new Set(
+      (Array.isArray(payload.invalidAttachments) ? payload.invalidAttachments : []).map((x) => normalize(x))
+    );
+
     for (const requiredDoc of candidate.requiredDocuments) {
-      const found = attachments.some((attachment) => attachmentMatchesDoc(attachment, requiredDoc));
-      candidate.documentStatus[requiredDoc] = found ? 'received' : 'missing';
+      const matches = attachments.filter((attachment) => attachmentMatchesDoc(attachment, requiredDoc));
+      if (matches.length === 0) {
+        candidate.documentStatus[requiredDoc] = 'missing';
+      } else if (matches.some((m) => invalidAttachments.has(normalize(m)))) {
+        candidate.documentStatus[requiredDoc] = 'invalid';
+      } else {
+        candidate.documentStatus[requiredDoc] = 'received';
+      }
     }
 
     applyCompliance(candidate, payload.submittedAt, payload.subject);
@@ -214,18 +262,32 @@ function submitCandidateDocuments(candidateId, payload) {
       transitionCandidate(candidate, WORKFLOW_STATES.FOR_REVIEW);
       candidate.statusOfApplication = 'For Review';
     } else {
-      candidate.statusOfApplication = 'Documents Missing';
+      candidate.statusOfApplication = 'Documents Pending';
       const missing = Object.entries(candidate.documentStatus)
         .filter(([, status]) => status !== 'received')
-        .map(([docName]) => docName);
-      const body = `You still need to submit the following requirements: ${missing.join(', ')}`;
-      addEmailEvent(state, candidate.id, 'outbound', 'Missing Documentary Requirements', body);
+        .map(([docName, status]) => `${docName} (${status})`);
+      const body = renderTemplate(
+        'missingDocs',
+        {
+          fullName: candidate.fullName,
+          deadline: config.defaultDeadline,
+          missingList: missing.join('\n')
+        },
+        state.templates
+      );
+      queueEmailEvent(state, {
+        candidateId: candidate.id,
+        to: candidate.email,
+        subject: 'Missing Documentary Requirements',
+        body
+      });
       addAuditLog(state, 'email.missing_docs_sent', candidate.id, { missing });
     }
 
     candidate.updatedAt = nowIso();
     addAuditLog(state, 'candidate.documents_submitted', candidate.id, {
       attachments,
+      invalidAttachments: [...invalidAttachments],
       compliance: candidate.compliance
     });
 
@@ -285,8 +347,18 @@ function extractCandidateProfile(candidateId, payload) {
 
     const foundFields = [education, experience, csc].filter((x) => x !== 'Unknown' && x !== 'None').length;
     candidate.extractionConfidence = foundFields >= 3 ? 'high' : foundFields === 2 ? 'medium' : 'low';
-
     candidate.updatedAt = nowIso();
+
+    if (candidate.extractionConfidence !== 'high') {
+      state.verificationQueue.push({
+        id: crypto.randomUUID(),
+        candidateId: candidate.id,
+        createdAt: nowIso(),
+        status: 'pending',
+        reason: `Extraction confidence is ${candidate.extractionConfidence}`
+      });
+    }
+
     addAuditLog(state, 'candidate.profile_extracted', candidate.id, {
       extractionConfidence: candidate.extractionConfidence
     });
@@ -296,6 +368,40 @@ function extractCandidateProfile(candidateId, payload) {
   }).__result;
 }
 
+function enqueueExtractionJob(candidateId, files = []) {
+  return updateStore((state) => {
+    const candidate = state.candidates.find((x) => x.id === candidateId);
+    if (!candidate) {
+      throw new Error('Candidate not found');
+    }
+    const job = {
+      id: crypto.randomUUID(),
+      candidateId,
+      files,
+      createdAt: nowIso(),
+      status: 'queued'
+    };
+    state.extractionQueue.push(job);
+    addAuditLog(state, 'extraction.job_queued', candidateId, { files });
+    state.__result = job;
+    return state;
+  }).__result;
+}
+
+function processExtractionJob(jobId, payload = {}) {
+  const candidateId = updateStore((state) => {
+    const job = state.extractionQueue.find((x) => x.id === jobId);
+    if (!job) {
+      throw new Error('Job not found');
+    }
+    job.status = 'completed';
+    job.completedAt = nowIso();
+    state.__result = job.candidateId;
+    return state;
+  }).__result;
+  return extractCandidateProfile(candidateId, payload);
+}
+
 function calculateRecommendation(candidateId) {
   return updateStore((state) => {
     const candidate = state.candidates.find((x) => x.id === candidateId);
@@ -303,51 +409,47 @@ function calculateRecommendation(candidateId) {
       throw new Error('Candidate not found');
     }
 
+    const weights = state.settings.scoringWeights || SCORING_WEIGHTS;
     const docsComplete = Object.values(candidate.documentStatus).every((status) => status === 'received');
-    const docsScore = docsComplete ? SCORING_WEIGHTS.docsComplete : 0;
+    const docsScore = docsComplete ? weights.docsComplete : 0;
 
     const eligibilityScore =
       candidate.cscEligibility === 'Professional'
-        ? SCORING_WEIGHTS.eligibility
+        ? weights.eligibility
         : candidate.cscEligibility === 'Sub-Professional'
-          ? Math.round(SCORING_WEIGHTS.eligibility * 0.8)
+          ? Math.round(weights.eligibility * 0.8)
           : candidate.cscEligibility === 'PRC' || candidate.cscEligibility === 'Honor Graduate Eligibility'
-            ? Math.round(SCORING_WEIGHTS.eligibility * 0.7)
+            ? Math.round(weights.eligibility * 0.7)
             : 0;
 
     const experienceScore =
       candidate.workExperience === 'More than 3 years'
-        ? SCORING_WEIGHTS.experience
+        ? weights.experience
         : candidate.workExperience === '1-3 years'
-          ? Math.round(SCORING_WEIGHTS.experience * 0.75)
+          ? Math.round(weights.experience * 0.75)
           : candidate.workExperience === 'Less than 1 year'
-            ? Math.round(SCORING_WEIGHTS.experience * 0.4)
+            ? Math.round(weights.experience * 0.4)
             : 0;
 
     const educationScore =
       candidate.educationalAttainment === 'Graduate School'
-        ? SCORING_WEIGHTS.education
+        ? weights.education
         : candidate.educationalAttainment === 'College Graduate'
-          ? Math.round(SCORING_WEIGHTS.education * 0.85)
+          ? Math.round(weights.education * 0.85)
           : candidate.educationalAttainment === 'Senior High School'
-            ? Math.round(SCORING_WEIGHTS.education * 0.4)
+            ? Math.round(weights.education * 0.4)
             : 0;
 
     const trainingsScore =
       candidate.trainings === 'With trainings'
-        ? SCORING_WEIGHTS.trainings
-        : Math.round(SCORING_WEIGHTS.trainings * SCORING_MULTIPLIERS.TRAININGS_PARTIAL_CREDIT);
-    const awardsScore = candidate.awards === 'With awards' ? SCORING_WEIGHTS.awards : 0;
+        ? weights.trainings
+        : Math.round(weights.trainings * SCORING_MULTIPLIERS.TRAININGS_PARTIAL_CREDIT);
+    const awardsScore = candidate.awards === 'With awards' ? weights.awards : 0;
 
-    const total =
-      docsScore +
-      eligibilityScore +
-      experienceScore +
-      educationScore +
-      trainingsScore +
-      awardsScore;
+    const total = docsScore + eligibilityScore + experienceScore + educationScore + trainingsScore + awardsScore;
 
-    const rankLabel = total >= 85 ? 'Strongly Recommended' : total >= 70 ? 'Recommended' : total >= 50 ? 'Consider' : 'Low Priority';
+    const rankLabel =
+      total >= 85 ? 'Strongly Recommended' : total >= 70 ? 'Recommended' : total >= 50 ? 'Consider' : 'Low Priority';
 
     candidate.recommendation = {
       score: total,
@@ -367,6 +469,18 @@ function calculateRecommendation(candidateId) {
     addAuditLog(state, 'candidate.scored', candidate.id, candidate.recommendation);
 
     state.__result = candidate.recommendation;
+    return state;
+  }).__result;
+}
+
+function updateScoringWeights(partialWeights = {}) {
+  return updateStore((state) => {
+    state.settings.scoringWeights = {
+      ...state.settings.scoringWeights,
+      ...partialWeights
+    };
+    addAuditLog(state, 'scoring.weights_updated', null, state.settings.scoringWeights);
+    state.__result = state.settings.scoringWeights;
     return state;
   }).__result;
 }
@@ -392,8 +506,22 @@ function updateCandidateStatus(candidateId, action, payload = {}) {
         venue: payload.venue || ''
       };
       const subject = `Initial Interview Schedule - ${candidate.position}`;
-      const body = `Hello ${candidate.fullName}, your initial interview is scheduled on ${payload.date} ${payload.time}. ${payload.meetingLink || payload.venue || ''}`;
-      addEmailEvent(state, candidate.id, 'outbound', subject, body);
+      const body = renderTemplate(
+        'interviewInvite',
+        {
+          fullName: candidate.fullName,
+          date: payload.date,
+          time: payload.time,
+          location: payload.meetingLink || payload.venue || ''
+        },
+        state.templates
+      );
+      queueEmailEvent(state, {
+        candidateId: candidate.id,
+        to: candidate.email,
+        subject,
+        body
+      });
       addAuditLog(state, 'candidate.interview_scheduled', candidate.id, candidate.interviewSchedule);
     } else if (action === 'hire') {
       transitionCandidate(candidate, WORKFLOW_STATES.HIRED);
@@ -407,6 +535,26 @@ function updateCandidateStatus(candidateId, action, payload = {}) {
     } else if (action === 'confirmInterview') {
       candidate.confirmedAttendance = true;
       addAuditLog(state, 'candidate.interview_confirmed', candidate.id);
+    } else if (action === 'followUp') {
+      const missing = Object.entries(candidate.documentStatus)
+        .filter(([, status]) => status !== 'received')
+        .map(([doc, status]) => `${doc} (${status})`);
+      const body = renderTemplate(
+        'missingDocs',
+        {
+          fullName: candidate.fullName,
+          deadline: config.defaultDeadline,
+          missingList: missing.join('\n') || 'No missing items recorded.'
+        },
+        state.templates
+      );
+      queueEmailEvent(state, {
+        candidateId: candidate.id,
+        to: candidate.email,
+        subject: 'Follow-up: Application Requirements',
+        body
+      });
+      addAuditLog(state, 'candidate.follow_up_sent', candidate.id);
     } else {
       throw new Error('Unsupported action');
     }
@@ -417,8 +565,159 @@ function updateCandidateStatus(candidateId, action, payload = {}) {
   }).__result;
 }
 
-function listCandidates() {
-  return readStore().candidates;
+function retryEmailEvent(eventId) {
+  return updateStore((state) => {
+    const event = state.emailEvents.find((x) => x.id === eventId);
+    if (!event) {
+      throw new Error('Email event not found');
+    }
+
+    event.retries = (event.retries || 0) + 1;
+    event.status = EMAIL_STATUSES.SENT;
+    event.lastError = '';
+
+    const queueItem = state.retryQueue.find((x) => x.emailEventId === eventId && x.status === 'pending');
+    if (queueItem) {
+      queueItem.status = 'resolved';
+      queueItem.resolvedAt = nowIso();
+    }
+
+    addAuditLog(state, 'email.retry_processed', event.candidateId, { eventId });
+    state.__result = decryptEmailEvent(event);
+    return state;
+  }).__result;
+}
+
+function processInboundEmail(payload) {
+  const subject = String(payload.subject || '').trim();
+  const fromEmail = String(payload.fromEmail || '').trim();
+  const fromName = String(payload.fromName || fromEmail).trim();
+  const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+  const body = String(payload.body || '');
+
+  updateStore((state) => {
+    queueEmailEvent(state, {
+      direction: 'inbound',
+      from: fromEmail,
+      to: config.mailboxAddress,
+      subject,
+      body
+    });
+    state.__result = true;
+    return state;
+  });
+
+  if (subject.toLowerCase().startsWith('application for ')) {
+    const position = subject.slice('Application for '.length).trim();
+    const snapshot = readStore();
+    const existing = findCandidateByIdentity(snapshot, fromName, fromEmail, position);
+    if (!existing) {
+      const created = createCandidateFromApplication({
+        fullName: fromName,
+        email: fromEmail,
+        position,
+        receivedAt: payload.receivedAt
+      });
+      return { action: 'candidate_created', candidateId: created.candidate.id };
+    }
+
+    if (attachments.length > 0) {
+      submitCandidateDocuments(existing.id, {
+        attachments,
+        subject,
+        submittedAt: payload.receivedAt
+      });
+      return { action: 'documents_processed', candidateId: existing.id };
+    }
+  }
+
+  const target = readStore().candidates.find((candidate) => normalize(candidate.email) === normalize(fromEmail));
+  if (target && /acknowledge|confirmed|confirm/i.test(body)) {
+    updateCandidateStatus(target.id, 'confirmInterview');
+    return { action: 'acknowledged', candidateId: target.id };
+  }
+
+  return { action: 'logged_only' };
+}
+
+function mergeDuplicateCandidates(primaryId, duplicateId) {
+  return updateStore((state) => {
+    const primary = state.candidates.find((x) => x.id === primaryId);
+    const duplicate = state.candidates.find((x) => x.id === duplicateId);
+    if (!primary || !duplicate) {
+      throw new Error('Candidate not found');
+    }
+    if (primary.id === duplicate.id) {
+      throw new Error('Cannot merge same candidate');
+    }
+
+    for (const doc of duplicate.requiredDocuments) {
+      if (!primary.requiredDocuments.includes(doc)) {
+        primary.requiredDocuments.push(doc);
+        primary.documentStatus[doc] = duplicate.documentStatus[doc] || 'missing';
+      } else if (duplicate.documentStatus[doc] === 'received') {
+        primary.documentStatus[doc] = 'received';
+      }
+    }
+
+    primary.specialNote = [primary.specialNote, `Merged duplicate record ${duplicate.id}`].filter(Boolean).join('; ');
+    state.candidates = state.candidates.filter((x) => x.id !== duplicate.id);
+
+    addAuditLog(state, 'candidate.duplicate_merged', primary.id, { removedCandidateId: duplicate.id });
+    state.__result = primary;
+    return state;
+  }).__result;
+}
+
+function verifyCandidateExtraction(candidateId, updates = {}) {
+  return updateStore((state) => {
+    const candidate = state.candidates.find((x) => x.id === candidateId);
+    if (!candidate) {
+      throw new Error('Candidate not found');
+    }
+
+    const allowed = [
+      'educationalAttainment',
+      'workExperience',
+      'awards',
+      'trainings',
+      'cscEligibility',
+      'specialNote'
+    ];
+
+    for (const key of allowed) {
+      if (Object.prototype.hasOwnProperty.call(updates, key)) {
+        candidate[key] = updates[key];
+      }
+    }
+
+    const pendingItem = state.verificationQueue.find(
+      (item) => item.candidateId === candidateId && item.status === 'pending'
+    );
+    if (pendingItem) {
+      pendingItem.status = 'resolved';
+      pendingItem.resolvedAt = nowIso();
+    }
+
+    candidate.extractionConfidence = 'high';
+    candidate.updatedAt = nowIso();
+    addAuditLog(state, 'candidate.extraction_verified', candidateId, { updates });
+    state.__result = candidate;
+    return state;
+  }).__result;
+}
+
+function listCandidates(filters = {}) {
+  const candidates = readStore().candidates;
+  return candidates.filter((candidate) => {
+    if (filters.position && normalize(candidate.position) !== normalize(filters.position)) {
+      return false;
+    }
+    if (filters.status && normalize(candidate.workflowState) !== normalize(filters.status)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 function getCandidate(candidateId) {
@@ -451,7 +750,9 @@ function getDashboard() {
     totals: {
       candidates: state.candidates.length,
       disqualified: state.candidates.filter((x) => x.compliance.disqualified).length,
-      interviewScheduled: state.candidates.filter((x) => x.workflowState === WORKFLOW_STATES.INTERVIEW_SCHEDULED).length
+      interviewScheduled: state.candidates.filter((x) => x.workflowState === WORKFLOW_STATES.INTERVIEW_SCHEDULED).length,
+      retryQueue: state.retryQueue.filter((x) => x.status === 'pending').length,
+      verificationQueue: state.verificationQueue.filter((x) => x.status === 'pending').length
     },
     byState,
     topCandidates
@@ -487,15 +788,98 @@ function listAuditLogs() {
 }
 
 function listEmailEvents() {
-  return readStore().emailEvents;
+  return readStore().emailEvents.map(decryptEmailEvent);
+}
+
+function listRetryQueue() {
+  return readStore().retryQueue;
+}
+
+function listVerificationQueue() {
+  return readStore().verificationQueue;
+}
+
+function listExtractionQueue() {
+  return readStore().extractionQueue;
+}
+
+function getTemplates() {
+  return readStore().templates;
+}
+
+function updateTemplate(templateKey, content) {
+  return updateStore((state) => {
+    if (!Object.prototype.hasOwnProperty.call(state.templates, templateKey)) {
+      throw new Error('Unknown template key');
+    }
+    state.templates[templateKey] = String(content);
+    addAuditLog(state, 'template.updated', null, { templateKey });
+    state.__result = state.templates;
+    return state;
+  }).__result;
+}
+
+function getScoringWeights() {
+  return readStore().settings.scoringWeights;
+}
+
+function getAnalytics() {
+  const state = readStore();
+  const total = state.candidates.length;
+  const forReview = state.candidates.filter((x) => x.workflowState === WORKFLOW_STATES.FOR_REVIEW).length;
+  const docsComplete = state.candidates.filter((x) => Object.values(x.documentStatus).every((v) => v === 'received')).length;
+  const interviewConfirmed = state.candidates.filter((x) => x.confirmedAttendance).length;
+
+  const durations = state.candidates
+    .filter((x) => x.createdAt && x.updatedAt)
+    .map((x) => new Date(x.updatedAt).getTime() - new Date(x.createdAt).getTime())
+    .filter((x) => Number.isFinite(x) && x >= 0);
+
+  const avgTimeHours = durations.length
+    ? Math.round((durations.reduce((acc, n) => acc + n, 0) / durations.length / 1000 / 60 / 60) * 100) / 100
+    : 0;
+
+  return {
+    totals: {
+      candidates: total,
+      forReview,
+      docsComplete,
+      interviewConfirmed
+    },
+    rates: {
+      completionRate: total ? Math.round((docsComplete / total) * 10000) / 100 : 0,
+      forReviewRate: total ? Math.round((forReview / total) * 10000) / 100 : 0
+    },
+    averageProcessingHours: avgTimeHours
+  };
+}
+
+function exportBackup() {
+  return readStore();
+}
+
+function importBackup(payload) {
+  return updateStore(() => {
+    const restored = normalizeState(payload);
+    restored.__result = restored;
+    return restored;
+  }).__result;
 }
 
 module.exports = {
   createCandidateFromApplication,
   submitCandidateDocuments,
   extractCandidateProfile,
+  enqueueExtractionJob,
+  processExtractionJob,
+  verifyCandidateExtraction,
   calculateRecommendation,
+  updateScoringWeights,
+  getScoringWeights,
   updateCandidateStatus,
+  retryEmailEvent,
+  processInboundEmail,
+  mergeDuplicateCandidates,
   listCandidates,
   getCandidate,
   listPositions,
@@ -503,7 +887,15 @@ module.exports = {
   toSheetRows,
   listAuditLogs,
   listEmailEvents,
+  listRetryQueue,
+  listVerificationQueue,
+  listExtractionQueue,
+  getTemplates,
+  updateTemplate,
   acknowledgementTemplate,
   findChecklist,
+  getAnalytics,
+  exportBackup,
+  importBackup,
   WORKFLOW_STATES
 };

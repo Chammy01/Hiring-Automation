@@ -53,3 +53,16 @@ test('scoring returns transparent recommendation output', () => {
   const candidate = getCandidate(id);
   assert.equal(candidate.recommendation.score, recommendation.score);
 });
+
+test('scoring weights can be updated', () => {
+  const {
+    getScoringWeights,
+    updateScoringWeights
+  } = require('../src/services');
+
+  const before = getScoringWeights();
+  assert.equal(before.awards, 5);
+
+  const updated = updateScoringWeights({ awards: 12 });
+  assert.equal(updated.awards, 12);
+});

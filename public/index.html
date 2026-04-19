@@ -22,6 +22,10 @@
 
       <section class="card">
         <h2>Candidate Pipeline</h2>
+        <div class="filters">
+          <label>Filter Position <input id="filter-position" placeholder="All positions" /></label>
+          <label>Filter Status <input id="filter-status" placeholder="All statuses" /></label>
+        </div>
         <div class="interview-defaults">
           <label>Interview Date <input id="interview-date" type="date" /></label>
           <label>Interview Time <input id="interview-time" type="time" /></label>
@@ -41,6 +45,11 @@
           </thead>
           <tbody id="candidate-rows"></tbody>
         </table>
+      </section>
+
+      <section class="card">
+        <h2>Operations Visibility</h2>
+        <div id="ops-metrics"></div>
       </section>
 
       <section class="card" id="details"></section>

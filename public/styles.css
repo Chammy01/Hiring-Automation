@@ -80,3 +80,10 @@ td {
   margin-bottom: 10px;
   flex-wrap: wrap;
 }
+
+.filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}

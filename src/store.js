@@ -1,12 +1,41 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { config } = require('./config');
+const { DEFAULT_TEMPLATES, SCORING_WEIGHTS } = require('./constants');
 
 const initialState = {
   candidates: [],
   emailEvents: [],
-  auditLogs: []
+  auditLogs: [],
+  retryQueue: [],
+  extractionQueue: [],
+  verificationQueue: [],
+  templates: { ...DEFAULT_TEMPLATES },
+  settings: {
+    scoringWeights: { ...SCORING_WEIGHTS }
+  }
 };
+
+function normalizeState(state = {}) {
+  return {
+    candidates: Array.isArray(state.candidates) ? state.candidates : [],
+    emailEvents: Array.isArray(state.emailEvents) ? state.emailEvents : [],
+    auditLogs: Array.isArray(state.auditLogs) ? state.auditLogs : [],
+    retryQueue: Array.isArray(state.retryQueue) ? state.retryQueue : [],
+    extractionQueue: Array.isArray(state.extractionQueue) ? state.extractionQueue : [],
+    verificationQueue: Array.isArray(state.verificationQueue) ? state.verificationQueue : [],
+    templates: {
+      ...DEFAULT_TEMPLATES,
+      ...(state.templates || {})
+    },
+    settings: {
+      scoringWeights: {
+        ...SCORING_WEIGHTS,
+        ...((state.settings && state.settings.scoringWeights) || {})
+      }
+    }
+  };
+}
 
 function ensureStore() {
   const absPath = path.resolve(config.dataFile);
@@ -23,7 +52,7 @@ function ensureStore() {
 function readStore() {
   const absPath = ensureStore();
   const data = fs.readFileSync(absPath, 'utf8');
-  return JSON.parse(data);
+  return normalizeState(JSON.parse(data));
 }
 
 function writeStore(state) {
@@ -48,5 +77,7 @@ function updateStore(updater) {
 module.exports = {
   readStore,
   writeStore,
-  updateStore
+  updateStore,
+  initialState,
+  normalizeState
 };

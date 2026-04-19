@@ -50,3 +50,27 @@ test('documents submission disqualifies on invalid subject', () => {
   assert.equal(candidate.workflowState, 'Rejected');
   assert.equal(candidate.compliance.disqualified, true);
 });
+
+test('invalid attachment marks document as invalid', () => {
+  const {
+    createCandidateFromApplication,
+    submitCandidateDocuments,
+    getCandidate
+  } = require('../src/services');
+
+  const created = createCandidateFromApplication({
+    fullName: 'Invalid Doc',
+    email: 'invalid@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+
+  submitCandidateDocuments(created.candidate.id, {
+    subject: 'Application for Administrative Aide IV (Clerk II)',
+    attachments: ['proof_csc_professional.pdf'],
+    invalidAttachments: ['proof_csc_professional.pdf'],
+    submittedAt: '2026-04-01T00:00:00.000Z'
+  });
+
+  const candidate = getCandidate(created.candidate.id);
+  assert.equal(candidate.documentStatus['Proof of CSC Eligibility'], 'invalid');
+});
