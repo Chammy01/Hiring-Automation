@@ -201,6 +201,26 @@ function normalize(v) {
 }
 
 /**
+ * Extract a display name from a "From" header value.
+ * "Jane Doe <jane@example.com>" → "Jane Doe"
+ * "<jane@example.com>" or "jane@example.com" → "jane" (local-part)
+ * Anything else → "Email Applicant"
+ */
+function parseFullNameFromFrom(from) {
+  const nameMatch = String(from || '').match(/^"?([^"<]+?)"?\s*<[^>]+>/);
+  if (nameMatch) {
+    const name = nameMatch[1].trim();
+    if (name) return name;
+  }
+  const emailMatch = String(from || '').match(/<([^>]+)>/) || String(from || '').match(/([^\s]+@[^\s]+)/);
+  if (emailMatch) {
+    const localPart = emailMatch[1].trim().split('@')[0];
+    if (localPart) return localPart;
+  }
+  return 'Email Applicant';
+}
+
+/**
  * Strategy (C): match by sender email + position from subject.
  * Falls back to token if ambiguous or no match.
  */
@@ -249,13 +269,13 @@ function resolveCandidate(candidates, fromEmail, subject) {
         `[gmail-intake] Ambiguous match: ${matched.length} candidates match email "${fromEmail}" + position "${position}". ` +
           'Ask sender to include "CandidateID:<id>" or "[HA:<id>]" in the subject line. Skipping.'
       );
+      return null;
     } else {
-      console.warn(
-        `[gmail-intake] No candidate found for email "${fromEmail}" and position "${position}". ` +
-          'Ask sender to include "CandidateID:<id>" or "[HA:<id>]" in the subject line. Skipping.'
+      console.log(
+        `[gmail-intake] No existing candidate found for email "${fromEmail}" and position "${position}". Will auto-create.`
       );
+      return { candidate: null, reason: 'no-match' };
     }
-    return null;
   }
 
   return null;
@@ -318,6 +338,14 @@ async function postDocumentsContent(candidateId, payload) {
   return res.body;
 }
 
+async function createCandidate(data) {
+  const res = await apiRequest('POST', '/api/applications/intake', data);
+  if (res.status !== 200 && res.status !== 201) {
+    throw new Error(`Failed to create candidate: ${res.status}: ${JSON.stringify(res.body)}`);
+  }
+  return res.body.candidate;
+}
+
 // ─── Gmail processing ─────────────────────────────────────────────────────────
 
 async function processEmail(gmail, message, processedIds) {
@@ -345,13 +373,31 @@ async function processEmail(gmail, message, processedIds) {
   const resolution = resolveCandidate(candidates, fromEmail, subject);
 
   if (!resolution) {
-    // Already logged in resolveCandidate
+    // Ambiguous or unresolvable — already logged in resolveCandidate
     processedIds.add(msgId);
     saveProcessedIds(processedIds);
     return;
   }
 
-  const candidate = resolution.candidate;
+  let candidate;
+  if (resolution.candidate === null && resolution.reason === 'no-match') {
+    // No existing candidate — auto-create from email metadata
+    const position = parsePositionFromSubject(subject) || 'Unknown Position';
+    const fullName = parseFullNameFromFrom(from);
+    console.log(
+      `[gmail-intake] Auto-creating candidate "${fullName}" <${fromEmail}> for position "${position}"`
+    );
+    try {
+      candidate = await createCandidate({ fullName, email: fromEmail, position });
+      console.log(`[gmail-intake] Auto-created candidate "${candidate.fullName}" (${candidate.id})`);
+    } catch (err) {
+      console.error('[gmail-intake] Failed to auto-create candidate:', err.message);
+      // Don't mark as processed so it retries
+      return;
+    }
+  } else {
+    candidate = resolution.candidate;
+  }
 
   // Process attachments
   const parts = flattenParts(full.data.payload);
@@ -490,7 +536,17 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('[gmail-intake] Fatal error:', err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('[gmail-intake] Fatal error:', err.message);
+    process.exit(1);
+  });
+}
+
+// Export pure helpers for testing
+module.exports = {
+  parsePositionFromSubject,
+  parseTokenFromSubject,
+  parseFullNameFromFrom,
+  resolveCandidate
+};
