@@ -12,11 +12,20 @@ const initialState = {
   verificationQueue: [],
   templates: { ...DEFAULT_TEMPLATES },
   settings: {
-    scoringWeights: { ...SCORING_WEIGHTS }
+    scoringWeights: { ...SCORING_WEIGHTS },
+    integrations: {
+      googleSheets: {
+        spreadsheetId: '',
+        spreadsheetUrl: '',
+        lastSyncedAt: '',
+        lastError: ''
+      }
+    }
   }
 };
 
 function normalizeState(state = {}) {
+  const googleSheetsState = (((state.settings || {}).integrations || {}).googleSheets || {});
   return {
     candidates: Array.isArray(state.candidates) ? state.candidates : [],
     emailEvents: Array.isArray(state.emailEvents) ? state.emailEvents : [],
@@ -32,6 +41,14 @@ function normalizeState(state = {}) {
       scoringWeights: {
         ...SCORING_WEIGHTS,
         ...((state.settings && state.settings.scoringWeights) || {})
+      },
+      integrations: {
+        googleSheets: {
+          spreadsheetId: googleSheetsState.spreadsheetId || '',
+          spreadsheetUrl: googleSheetsState.spreadsheetUrl || '',
+          lastSyncedAt: googleSheetsState.lastSyncedAt || '',
+          lastError: googleSheetsState.lastError || ''
+        }
       }
     }
   };

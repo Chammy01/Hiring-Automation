@@ -10,7 +10,11 @@ const config = {
   encryptionKey:
     process.env.ENCRYPTION_KEY ||
     'dev-local-encryption-key-change-this-dev-local-encryption-key',
-  mailboxAddress: process.env.MAILBOX_ADDRESS || 'applications@company.local'
+  mailboxAddress: process.env.MAILBOX_ADDRESS || 'applications@company.local',
+  googleSheetsEnabled: String(process.env.GOOGLE_SHEETS_ENABLED || '').toLowerCase() === 'true',
+  googleSheetsCredentialsJson: process.env.GOOGLE_SHEETS_CREDENTIALS_JSON || '',
+  googleSheetsSpreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID || '',
+  googleSheetsTitle: process.env.GOOGLE_SHEETS_TITLE || 'Hiring Automation Candidates'
 };
 
 module.exports = { config };

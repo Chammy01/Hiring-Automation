@@ -7,21 +7,38 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main>
-      <h1>Hiring Automation Dashboard</h1>
+    <main class="dashboard-shell">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Recruitment Operations</p>
+          <h1>Hiring Automation Dashboard</h1>
+          <p class="subtitle">Track hiring progress, sync candidate sheets, and manage workflow actions.</p>
+        </div>
+        <button id="refresh" class="btn btn-secondary">Refresh Data</button>
+      </header>
 
-      <section class="card">
-        <h2>New Application Intake</h2>
-        <form id="intake-form">
-          <label>Full Name <input name="fullName" required /></label>
-          <label>Email <input name="email" type="email" required /></label>
-          <label>Position <input name="position" required /></label>
-          <button type="submit">Register Candidate</button>
-        </form>
+      <section class="grid two-col">
+        <article class="card">
+          <h2>New Application Intake</h2>
+          <form id="intake-form" class="form-grid">
+            <label>Full Name <input name="fullName" required /></label>
+            <label>Email <input name="email" type="email" required /></label>
+            <label>Position <input name="position" required /></label>
+            <button type="submit" class="btn">Register Candidate</button>
+          </form>
+        </article>
+
+        <article class="card">
+          <h2>Integration Upgrades</h2>
+          <div id="integration-status"></div>
+          <button id="sync-google-sheets" class="btn">Sync Google Sheet Now</button>
+        </article>
       </section>
 
       <section class="card">
-        <h2>Candidate Pipeline</h2>
+        <div class="card-header">
+          <h2>Candidate Pipeline</h2>
+        </div>
         <div class="filters">
           <label>Filter Position <input id="filter-position" placeholder="All positions" /></label>
           <label>Filter Status <input id="filter-status" placeholder="All statuses" /></label>
@@ -31,28 +48,33 @@
           <label>Interview Time <input id="interview-time" type="time" /></label>
           <label>Venue <input id="interview-venue" value="Main Office" /></label>
         </div>
-        <button id="refresh">Refresh</button>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Position</th>
-              <th>Workflow</th>
-              <th>Score</th>
-              <th>Recommendation</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="candidate-rows"></tbody>
-        </table>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Position</th>
+                <th>Workflow</th>
+                <th>Score</th>
+                <th>Recommendation</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="candidate-rows"></tbody>
+          </table>
+        </div>
       </section>
 
-      <section class="card">
-        <h2>Operations Visibility</h2>
-        <div id="ops-metrics"></div>
+      <section class="grid two-col">
+        <article class="card">
+          <h2>Operations Visibility</h2>
+          <div id="ops-metrics" class="metric-grid"></div>
+        </article>
+        <article class="card" id="details">
+          <h2>Candidate Details</h2>
+          <p>Select a candidate row to preview details.</p>
+        </article>
       </section>
-
-      <section class="card" id="details"></section>
     </main>
     <script src="/script.js"></script>
   </body>
