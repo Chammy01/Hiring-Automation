@@ -8,8 +8,7 @@ const interviewVenueInput = document.getElementById('interview-venue');
 const filterPositionInput = document.getElementById('filter-position');
 const filterStatusInput = document.getElementById('filter-status');
 const syncGoogleSheetsButton = document.getElementById('sync-google-sheets');
-
-let currentCandidates = [];
+let activeDetailsId = '';
 
 const today = new Date().toISOString().slice(0, 10);
 if (!interviewDateInput.value) interviewDateInput.value = today;
@@ -92,7 +91,6 @@ async function loadCandidates() {
   if (filterStatusInput.value.trim()) params.set('status', filterStatusInput.value.trim());
 
   const data = await api(`/api/candidates?${params.toString()}`);
-  currentCandidates = data.items;
   candidateRows.innerHTML = '';
 
   for (const candidate of data.items) {
@@ -118,6 +116,7 @@ async function loadCandidates() {
 }
 
 async function loadDetails(id) {
+  activeDetailsId = id;
   const candidate = await api(`/api/candidates/${id}`);
   details.innerHTML = `
     <h2>${candidate.fullName}</h2>
@@ -185,7 +184,11 @@ candidateRows.addEventListener('click', async (event) => {
   const row = event.target.closest('tr');
 
   if (!button && row && row.dataset.candidateId) {
-    loadDetails(row.dataset.candidateId).catch(() => {});
+    if (activeDetailsId === row.dataset.candidateId) return;
+    loadDetails(row.dataset.candidateId).catch((error) => {
+      console.error(error);
+      details.innerHTML = '<h2>Candidate Details</h2><p>Unable to load candidate details right now.</p>';
+    });
     return;
   }
 

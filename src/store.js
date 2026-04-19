@@ -25,6 +25,7 @@ const initialState = {
 };
 
 function normalizeState(state = {}) {
+  const googleSheetsState = (((state.settings || {}).integrations || {}).googleSheets || {});
   return {
     candidates: Array.isArray(state.candidates) ? state.candidates : [],
     emailEvents: Array.isArray(state.emailEvents) ? state.emailEvents : [],
@@ -43,14 +44,10 @@ function normalizeState(state = {}) {
       },
       integrations: {
         googleSheets: {
-          spreadsheetId:
-            (((state.settings || {}).integrations || {}).googleSheets || {}).spreadsheetId || '',
-          spreadsheetUrl:
-            (((state.settings || {}).integrations || {}).googleSheets || {}).spreadsheetUrl || '',
-          lastSyncedAt:
-            (((state.settings || {}).integrations || {}).googleSheets || {}).lastSyncedAt || '',
-          lastError:
-            (((state.settings || {}).integrations || {}).googleSheets || {}).lastError || ''
+          spreadsheetId: googleSheetsState.spreadsheetId || '',
+          spreadsheetUrl: googleSheetsState.spreadsheetUrl || '',
+          lastSyncedAt: googleSheetsState.lastSyncedAt || '',
+          lastError: googleSheetsState.lastError || ''
         }
       }
     }

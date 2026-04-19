@@ -56,6 +56,11 @@ Open-source hiring workflow automation with intake, compliance validation, extra
 - Adjustable rubric weights for calibration.
 - Duplicate merge support for repeated applicants.
 
+### Phase 10 — Integration Upgrades + UI Modernization
+- Optional Google Sheets auto-create + sync for candidate organization.
+- Upgrade integration visibility for rollout planning.
+- Responsive modernized HR dashboard interface.
+
 ## Stack
 - Backend: Node.js + Express + Zod
 - Storage: JSON datastore (pilot), PostgreSQL-ready design path
@@ -106,6 +111,10 @@ MAILBOX_ADDRESS=applications@company.local
 HR_API_KEY=
 ROLE_HEADER=x-role
 ENCRYPTION_KEY=replace-with-your-own-long-random-secret
+GOOGLE_SHEETS_ENABLED=false
+GOOGLE_SHEETS_CREDENTIALS_JSON=
+GOOGLE_SHEETS_SPREADSHEET_ID=
+GOOGLE_SHEETS_TITLE=Hiring Automation Candidates
 ```
 
 Recommended: use a unique `ENCRYPTION_KEY` per machine/environment.
@@ -223,11 +232,12 @@ Restart the app and it will regenerate `data/store.json` automatically.
 - `POST /api/email-events/:id/retry`
 - `GET /api/templates` / `PUT /api/templates/:key`
 - `GET /api/analytics`
+- `GET /api/integrations`
+- `POST /api/integrations/google-sheets/sync`
 - `GET /api/backup` / `POST /api/restore`
 
 ## Next Integration Upgrades
 - Plug Gmail API/IMAP+SMTP transport behind queue dispatcher.
 - Replace JSON store with PostgreSQL.
-- Integrate Google Sheets API sync writer.
 - Add OCR adapters (Tesseract + PDF parser) to extraction job workers.
 - Add Ollama summary endpoint for recommendation explanation enrichment.

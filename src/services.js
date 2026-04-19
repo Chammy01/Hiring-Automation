@@ -18,6 +18,9 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+let googleSheetsSyncTimeout = null;
+let latestGoogleSheetsSyncReason = '';
+
 function getGoogleSheetsState(state = readStore()) {
   return (((state.settings || {}).integrations || {}).googleSheets || {});
 }
@@ -117,7 +120,18 @@ function triggerGoogleSheetsSync(reason) {
   if (!config.googleSheetsEnabled) {
     return;
   }
-  void syncGoogleSheets(reason);
+  latestGoogleSheetsSyncReason = reason;
+  if (googleSheetsSyncTimeout) {
+    clearTimeout(googleSheetsSyncTimeout);
+  }
+  googleSheetsSyncTimeout = setTimeout(() => {
+    const reasonToSync = latestGoogleSheetsSyncReason;
+    latestGoogleSheetsSyncReason = '';
+    googleSheetsSyncTimeout = null;
+    syncGoogleSheets(`auto:${reasonToSync}`).catch((error) => {
+      console.error('Google Sheets sync failed:', error.message);
+    });
+  }, 1500);
 }
 
 function normalize(value) {

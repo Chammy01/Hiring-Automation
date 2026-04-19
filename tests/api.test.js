@@ -49,3 +49,14 @@ test('failed ack appears in retry queue and can be retried', async () => {
   assert.equal(retried.status, 200);
   assert.equal(retried.body.status, 'sent');
 });
+
+test('integration endpoints expose status and manual sync response', async () => {
+  const status = await hr(request(app).get('/api/integrations'));
+  assert.equal(status.status, 200);
+  assert.equal(typeof status.body.googleSheets.enabled, 'boolean');
+  assert.ok(Array.isArray(status.body.upgrades));
+
+  const sync = await hr(request(app).post('/api/integrations/google-sheets/sync'));
+  assert.equal(sync.status, 200);
+  assert.equal(sync.body.synced, false);
+});

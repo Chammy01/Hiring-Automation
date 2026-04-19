@@ -18,6 +18,14 @@
       "education": 15,
       "trainings": 10,
       "awards": 5
+    },
+    "integrations": {
+      "googleSheets": {
+        "spreadsheetId": "",
+        "spreadsheetUrl": "",
+        "lastSyncedAt": "",
+        "lastError": ""
+      }
     }
   }
 }

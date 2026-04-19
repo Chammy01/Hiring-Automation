@@ -36,12 +36,17 @@ function toSheetValues(rows) {
 }
 
 async function createSpreadsheet(sheetsClient, title) {
-  const response = await sheetsClient.spreadsheets.create({
-    requestBody: {
-      properties: { title },
-      sheets: [{ properties: { title: SHEET_TAB_TITLE } }]
-    }
-  });
+  let response;
+  try {
+    response = await sheetsClient.spreadsheets.create({
+      requestBody: {
+        properties: { title },
+        sheets: [{ properties: { title: SHEET_TAB_TITLE } }]
+      }
+    });
+  } catch (error) {
+    throw new Error(`Failed to create Google Spreadsheet: ${error.message}`);
+  }
   const spreadsheetId = response.data.spreadsheetId;
   if (!spreadsheetId) {
     throw new Error('Failed to create Google Spreadsheet');
@@ -70,8 +75,15 @@ async function ensureCandidatesTab(sheetsClient, spreadsheetId) {
 
 async function upsertCandidateSheetRows({ rows, spreadsheetId, spreadsheetTitle }) {
   const sheetsClient = await getSheetsClient();
-  const created = spreadsheetId ? null : await createSpreadsheet(sheetsClient, spreadsheetTitle);
-  const targetSpreadsheetId = spreadsheetId || created.spreadsheetId;
+  let targetSpreadsheetId = spreadsheetId;
+  let targetSpreadsheetUrl = '';
+
+  if (!targetSpreadsheetId) {
+    const created = await createSpreadsheet(sheetsClient, spreadsheetTitle);
+    targetSpreadsheetId = created.spreadsheetId;
+    targetSpreadsheetUrl = created.spreadsheetUrl;
+  }
+
   await ensureCandidatesTab(sheetsClient, targetSpreadsheetId);
   const values = toSheetValues(rows);
 
@@ -89,8 +101,7 @@ async function upsertCandidateSheetRows({ rows, spreadsheetId, spreadsheetTitle 
 
   return {
     spreadsheetId: targetSpreadsheetId,
-    spreadsheetUrl:
-      (created && created.spreadsheetUrl) || `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}`
+    spreadsheetUrl: targetSpreadsheetUrl || `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}`
   };
 }
 
