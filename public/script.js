@@ -8,6 +8,7 @@ const interviewVenueInput = document.getElementById('interview-venue');
 const filterPositionInput = document.getElementById('filter-position');
 const filterStatusInput = document.getElementById('filter-status');
 const syncGoogleSheetsButton = document.getElementById('sync-google-sheets');
+// Prevent redundant details fetches when the same candidate row is clicked repeatedly.
 let activeDetailsId = '';
 
 const today = new Date().toISOString().slice(0, 10);

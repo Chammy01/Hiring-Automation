@@ -21,7 +21,7 @@ function nowIso() {
 let googleSheetsSyncTimeout = null;
 let latestGoogleSheetsSyncReason = '';
 
-function getGoogleSheetsState(state = readStore()) {
+function getGoogleSheetsState(state) {
   return (((state.settings || {}).integrations || {}).googleSheets || {});
 }
 
