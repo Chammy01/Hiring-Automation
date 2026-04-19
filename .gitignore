@@ -3,3 +3,6 @@ node_modules/
 npm-debug.log*
 .DS_Store
 coverage/
+credentials.json
+data/gmail-token.json
+data/gmail-processed-ids.json

@@ -60,3 +60,42 @@ test('integration endpoints expose status and manual sync response', async () =>
   assert.equal(sync.status, 200);
   assert.equal(sync.body.synced, false);
 });
+
+test('documents/content endpoint classifies files and updates doc status', async () => {
+  const intake = await hr(request(app).post('/api/applications/intake')).send({
+    fullName: 'Content Test',
+    email: 'content@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+  assert.equal(intake.status, 201);
+  const candidateId = intake.body.candidate.id;
+
+  const result = await hr(
+    request(app).post(`/api/candidates/${candidateId}/documents/content`)
+  ).send({
+    submittedAt: '2026-04-01T00:00:00.000Z',
+    subject: 'Application for Administrative Aide IV (Clerk II)',
+    files: [
+      { fileName: 'letter_of_intent.pdf', text: 'I wish to apply for the position', mimeType: 'application/pdf' },
+      { fileName: 'pds.pdf', text: 'Personal Data Sheet civil service form date of birth', mimeType: 'application/pdf' },
+      { fileName: 'csc_eligibility.pdf', text: 'career service professional eligibility', mimeType: 'application/pdf' }
+    ]
+  });
+
+  assert.equal(result.status, 200);
+  assert.ok(result.body.candidate);
+  assert.ok(Array.isArray(result.body.classifications));
+  assert.equal(result.body.candidate.documentStatus['Letter of Intent'], 'received');
+  assert.equal(result.body.candidate.documentStatus['PDS'], 'received');
+  assert.equal(result.body.candidate.documentStatus['Proof of CSC Eligibility'], 'received');
+});
+
+test('documents/content endpoint returns 400 for missing files field', async () => {
+  // Schema validation fails before any candidate lookup — use a fake UUID
+  const fakeId = '00000000-0000-0000-0000-000000000000';
+  const result = await hr(
+    request(app).post(`/api/candidates/${fakeId}/documents/content`)
+  ).send({ submittedAt: '2026-04-01T00:00:00.000Z' });
+
+  assert.equal(result.status, 400);
+});

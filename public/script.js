@@ -119,18 +119,41 @@ async function loadCandidates() {
 async function loadDetails(id) {
   activeDetailsId = id;
   const candidate = await api(`/api/candidates/${id}`);
+
+  const docStatusIcons = { received: '✅', missing: '⚠️', invalid: '❌' };
+  const docRows = Object.entries(candidate.documentStatus)
+    .map(([k, v]) => {
+      const icon = docStatusIcons[v] || '❓';
+      return `<tr><td>${escapeHtml(k)}</td><td>${icon} ${escapeHtml(v)}</td></tr>`;
+    })
+    .join('');
+
   details.innerHTML = `
-    <h2>${candidate.fullName}</h2>
-    <p><b>Email:</b> ${candidate.email}</p>
-    <p><b>Status:</b> ${candidate.workflowState}</p>
-    <p><b>Documents:</b> ${Object.entries(candidate.documentStatus)
-      .map(([k, v]) => `${k}: ${v}`)
-      .join(' | ')}</p>
+    <h2>${escapeHtml(candidate.fullName)}</h2>
+    <p><b>Email:</b> ${escapeHtml(candidate.email)}</p>
+    <p><b>Status:</b> ${escapeHtml(candidate.workflowState)}</p>
+    <details open>
+      <summary><b>Documents</b></summary>
+      <table style="border-collapse:collapse;width:100%;margin-top:4px">
+        <thead><tr><th style="text-align:left;padding:2px 8px">Document</th><th style="text-align:left;padding:2px 8px">Status</th></tr></thead>
+        <tbody>${docRows}</tbody>
+      </table>
+    </details>
     <p><b>Compliance:</b> ${
-      candidate.compliance.disqualified ? `Disqualified (${candidate.compliance.reasons.join('; ')})` : 'Compliant'
+      candidate.compliance.disqualified
+        ? `Disqualified (${escapeHtml(candidate.compliance.reasons.join('; '))})`
+        : 'Compliant'
     }</p>
-    <p><b>Recommendation:</b> ${candidate.recommendation.reason}</p>
+    <p><b>Recommendation:</b> ${escapeHtml(candidate.recommendation.reason)}</p>
   `;
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 async function reloadAll() {
