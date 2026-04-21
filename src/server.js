@@ -47,7 +47,9 @@ const {
   runDocumentParsing,
   getDocumentParsingJob,
   listDocumentParsingJobs,
-  applyCandidateEnrichment
+  applyCandidateEnrichment,
+  archiveCandidate,
+  deleteCandidate
 } = require('./services');
 
 const app = express();
@@ -216,7 +218,8 @@ app.get('/api/positions', (_req, res) => {
 app.get('/api/candidates', secure('read:candidates'), (req, res) => {
   const filters = {
     position: req.query.position,
-    status: req.query.status
+    status: req.query.status,
+    archived: req.query.archived
   };
   res.json({ items: listCandidates(filters) });
 });
@@ -227,6 +230,29 @@ app.get('/api/candidates/:id', secure('read:candidates'), (req, res) => {
     return res.status(404).json({ error: 'Candidate not found' });
   }
   return res.json(candidate);
+});
+
+app.patch('/api/candidates/:id/archive', secureWrite('write:candidates'), (req, res) => {
+  try {
+    const archived = req.body && Object.prototype.hasOwnProperty.call(req.body, 'archived')
+      ? Boolean(req.body.archived)
+      : undefined;
+    const candidate = archiveCandidate(req.params.id, archived);
+    return res.json(candidate);
+  } catch (error) {
+    const status = error.message === 'Candidate not found' ? 404 : 400;
+    return res.status(status).json({ error: error.message });
+  }
+});
+
+app.delete('/api/candidates/:id', secureWrite('write:candidates'), (req, res) => {
+  try {
+    const candidate = deleteCandidate(req.params.id);
+    return res.json({ deleted: true, candidate });
+  } catch (error) {
+    const status = error.message === 'Candidate not found' ? 404 : 400;
+    return res.status(status).json({ error: error.message });
+  }
 });
 
 app.post('/api/applications/intake', secureWrite('write:candidates'), (req, res) => {

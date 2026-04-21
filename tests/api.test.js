@@ -177,3 +177,70 @@ test('compliance uses deadline from settings', async () => {
   assert.equal(docs.status, 200);
   assert.equal(docs.body.compliance.submittedBeforeDeadline, true);
 });
+
+test('archive endpoint toggles isArchived on a candidate', async () => {
+  const intake = await hr(request(app).post('/api/applications/intake')).send({
+    fullName: 'Archive Test',
+    email: 'archivetest@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+  assert.equal(intake.status, 201);
+  const candidateId = intake.body.candidate.id;
+
+  // Archive the candidate
+  const archived = await hr(request(app).patch(`/api/candidates/${candidateId}/archive`)).send({ archived: true });
+  assert.equal(archived.status, 200);
+  assert.equal(archived.body.isArchived, true);
+
+  // Candidate should not appear in the active list
+  const activeList = await hr(request(app).get('/api/candidates'));
+  assert.ok(!activeList.body.items.some((c) => c.id === candidateId));
+
+  // Candidate should appear in archived list
+  const archivedList = await hr(request(app).get('/api/candidates?archived=true'));
+  assert.ok(archivedList.body.items.some((c) => c.id === candidateId));
+
+  // Unarchive the candidate
+  const unarchived = await hr(request(app).patch(`/api/candidates/${candidateId}/archive`)).send({ archived: false });
+  assert.equal(unarchived.status, 200);
+  assert.equal(unarchived.body.isArchived, false);
+
+  // Candidate should be visible in active list again
+  const activeList2 = await hr(request(app).get('/api/candidates'));
+  assert.ok(activeList2.body.items.some((c) => c.id === candidateId));
+});
+
+test('archive endpoint returns 404 for unknown candidate', async () => {
+  const res = await hr(request(app).patch('/api/candidates/00000000-0000-0000-0000-000000000000/archive')).send({});
+  assert.equal(res.status, 404);
+});
+
+test('delete endpoint permanently removes a candidate', async () => {
+  const intake = await hr(request(app).post('/api/applications/intake')).send({
+    fullName: 'Delete Test',
+    email: 'deletetest@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+  assert.equal(intake.status, 201);
+  const candidateId = intake.body.candidate.id;
+
+  const deleted = await hr(request(app).delete(`/api/candidates/${candidateId}`));
+  assert.equal(deleted.status, 200);
+  assert.equal(deleted.body.deleted, true);
+  assert.equal(deleted.body.candidate.id, candidateId);
+
+  // Candidate should no longer be retrievable
+  const fetched = await hr(request(app).get(`/api/candidates/${candidateId}`));
+  assert.equal(fetched.status, 404);
+
+  // Candidate should not appear in either list
+  const activeList = await hr(request(app).get('/api/candidates'));
+  assert.ok(!activeList.body.items.some((c) => c.id === candidateId));
+  const archivedList = await hr(request(app).get('/api/candidates?archived=true'));
+  assert.ok(!archivedList.body.items.some((c) => c.id === candidateId));
+});
+
+test('delete endpoint returns 404 for unknown candidate', async () => {
+  const res = await hr(request(app).delete('/api/candidates/00000000-0000-0000-0000-000000000000'));
+  assert.equal(res.status, 404);
+});

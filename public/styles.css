@@ -433,6 +433,13 @@ body {
   pointer-events: none;
 }
 
+.btn-ghost.active,
+.archive-toggle-btn[aria-pressed="true"] {
+  background: var(--accent-dim, rgba(99, 102, 241, 0.15));
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ── 7. CARDS ────────────────────────────────────────────────── */
 .card {
   background: var(--glass-bg);

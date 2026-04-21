@@ -223,6 +223,13 @@
               </svg>
               <input type="search" id="search-input" placeholder="Search by name or email…" aria-label="Search candidates" />
             </label>
+            <button class="btn btn-sm btn-ghost archive-toggle-btn" id="archive-toggle" aria-label="Toggle archived candidates view" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/>
+                <line x1="10" y1="12" x2="14" y2="12"/>
+              </svg>
+              <span id="archive-toggle-label">Active Candidates</span>
+            </button>
           </div>
 
           <!-- Bulk toolbar -->
@@ -235,11 +242,25 @@
               </svg>
               Export
             </button>
+            <button class="btn btn-sm btn-ghost" id="bulk-archive" aria-label="Archive selected candidates">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/>
+                <line x1="10" y1="12" x2="14" y2="12"/>
+              </svg>
+              <span>Archive</span>
+            </button>
             <button class="btn btn-sm btn-danger" id="bulk-reject" aria-label="Reject selected candidates">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
               </svg>
               Reject
+            </button>
+            <button class="btn btn-sm btn-danger" id="bulk-delete" aria-label="Delete selected candidates">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+                <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+              </svg>
+              Delete
             </button>
             <button class="btn btn-sm btn-ghost" id="bulk-clear" aria-label="Clear selection">Clear</button>
           </div>
@@ -635,6 +656,29 @@
         <div class="modal-footer">
           <button class="btn btn-ghost" data-close-modal="reject-modal">Cancel</button>
           <button class="btn btn-danger" id="reject-submit" type="button">Confirm Reject</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ DELETE CONFIRMATION MODAL ═══ -->
+    <div class="modal-overlay" id="delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" aria-hidden="true">
+      <div class="modal-panel modal-sm" role="document">
+        <div class="modal-header">
+          <h2 class="modal-title" id="delete-modal-title">Delete Candidate</h2>
+          <button class="modal-close" data-close-modal="delete-modal" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p id="delete-modal-message" style="color:var(--text-secondary);margin-bottom:0.5rem">
+            This action is <strong>permanent</strong> and cannot be undone. All candidate data and associated documents will be removed.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" data-close-modal="delete-modal">Cancel</button>
+          <button class="btn btn-danger" id="delete-confirm-btn" type="button">Permanently Delete</button>
         </div>
       </div>
     </div>
