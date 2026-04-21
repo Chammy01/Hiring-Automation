@@ -849,7 +849,9 @@ function verifyCandidateExtraction(candidateId, updates = {}) {
 
 function listCandidates(filters = {}) {
   const candidates = readStore().candidates;
+  const archived = filters.archived === true || filters.archived === 'true';
   return candidates.filter((candidate) => {
+    if (Boolean(candidate.isArchived) !== archived) return false;
     if (filters.position && normalize(candidate.position) !== normalize(filters.position)) {
       return false;
     }
@@ -1193,6 +1195,55 @@ function applyCandidateEnrichment(candidateId, fields = {}, confidence = 'low') 
   return readStore().candidates.find((c) => c.id === candidateId) || null;
 }
 
+/**
+ * Toggle the archived status of a candidate.
+ * @param {string} candidateId
+ * @param {boolean} [archived] - if omitted, toggles current value
+ * @returns {object} updated candidate
+ */
+function archiveCandidate(candidateId, archived) {
+  const result = updateStore((state) => {
+    const candidate = state.candidates.find((x) => x.id === candidateId);
+    if (!candidate) {
+      throw new Error('Candidate not found');
+    }
+    candidate.isArchived = archived !== undefined ? Boolean(archived) : !Boolean(candidate.isArchived);
+    candidate.updatedAt = nowIso();
+    addAuditLog(state, candidate.isArchived ? 'candidate.archived' : 'candidate.unarchived', candidate.id, {});
+    state.__result = candidate;
+    return state;
+  }).__result;
+  triggerGoogleSheetsSync('candidate.archived');
+  return result;
+}
+
+/**
+ * Permanently delete a candidate and all in-memory references.
+ * @param {string} candidateId
+ * @returns {object} deleted candidate
+ */
+function deleteCandidate(candidateId) {
+  const result = updateStore((state) => {
+    const idx = state.candidates.findIndex((x) => x.id === candidateId);
+    if (idx === -1) {
+      throw new Error('Candidate not found');
+    }
+    const [candidate] = state.candidates.splice(idx, 1);
+
+    // Clean up related in-memory queues
+    state.emailEvents         = state.emailEvents.filter((e) => e.candidateId !== candidateId);
+    state.retryQueue          = state.retryQueue.filter((r) => r.candidateId !== candidateId);
+    state.extractionQueue     = state.extractionQueue.filter((q) => q.candidateId !== candidateId);
+    state.verificationQueue   = state.verificationQueue.filter((q) => q.candidateId !== candidateId);
+
+    addAuditLog(state, 'candidate.deleted', candidateId, { fullName: candidate.fullName });
+    state.__result = candidate;
+    return state;
+  }).__result;
+  triggerGoogleSheetsSync('candidate.deleted');
+  return result;
+}
+
 module.exports = {
   createCandidateFromApplication,
   submitCandidateDocuments,
@@ -1239,5 +1290,7 @@ module.exports = {
   runDocumentParsing,
   getDocumentParsingJob,
   listDocumentParsingJobs,
-  applyCandidateEnrichment
+  applyCandidateEnrichment,
+  archiveCandidate,
+  deleteCandidate
 };

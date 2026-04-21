@@ -38,6 +38,10 @@ async function list(filters = {}) {
     conditions.push(`lower(workflow_state) = lower($${idx++})`);
     values.push(filters.status);
   }
+  // Default to active (non-archived) unless explicitly requesting archived
+  const archived = filters.archived === true || filters.archived === 'true';
+  conditions.push(`is_archived = $${idx++}`);
+  values.push(archived);
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const res = await db.query(
@@ -94,7 +98,7 @@ async function update(id, fields) {
     'educational_attainment', 'work_experience', 'awards', 'trainings', 'csc_eligibility',
     'special_note', 'link', 'email_sent', 'confirmed_attendance', 'extraction_confidence',
     'document_status', 'required_documents', 'compliance', 'recommendation',
-    'interview_schedule', 'updated_at'
+    'interview_schedule', 'is_archived', 'updated_at'
   ];
 
   const sets = [];
@@ -123,4 +127,9 @@ async function update(id, fields) {
   return res.rows[0] || null;
 }
 
-module.exports = { findById, findByEmail, findByIdentity, list, create, update };
+async function remove(id) {
+  const res = await db.query('DELETE FROM candidates WHERE id = $1 RETURNING *', [id]);
+  return res.rows[0] || null;
+}
+
+module.exports = { findById, findByEmail, findByIdentity, list, create, update, remove };

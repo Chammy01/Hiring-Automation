@@ -263,6 +263,8 @@ let sortDir = 'asc';
 let activeCandidateId = null;
 let pendingInterviewId = null;
 let pendingRejectIds = [];
+let showArchived = false;
+let pendingDeleteIds = [];
 
 // Restore sort from localStorage
 const savedSort = localStorage.getItem('hf-sort');
@@ -442,6 +444,8 @@ function renderCandidateRows() {
           ${rowActionBtn('interview', c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`, 'Schedule')}
           ${rowActionBtn('hire',      c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`, 'Hire', 'btn-success-ghost')}
           ${rowActionBtn('reject',    c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`, 'Reject', 'btn-danger-ghost')}
+          ${rowActionBtn('archive',   c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`, c.isArchived ? 'Unarchive' : 'Archive')}
+          ${rowActionBtn('delete',    c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`, 'Delete', 'btn-danger-ghost')}
         </div>
       </td>`;
 
@@ -522,6 +526,31 @@ document.getElementById('bulk-export').addEventListener('click', () => {
   toast(`Exported ${subset.length} candidates`, 'success');
 });
 
+document.getElementById('bulk-archive').addEventListener('click', async () => {
+  if (!selectedIds.size) return;
+  const ids = [...selectedIds];
+  let ok = 0; let fail = 0;
+  for (const id of ids) {
+    try {
+      await api(`/api/candidates/${id}/archive`, { method: 'PATCH', body: JSON.stringify({ archived: !showArchived }) });
+      ok++;
+    } catch { fail++; }
+  }
+  if (ok) toast(`${showArchived ? 'Unarchived' : 'Archived'} ${ok} candidate(s)`, 'success');
+  if (fail) toast(`Failed to archive ${fail} candidate(s)`, 'error');
+  selectedIds.clear();
+  await loadCandidates();
+});
+
+document.getElementById('bulk-delete').addEventListener('click', () => {
+  if (!selectedIds.size) return;
+  pendingDeleteIds = [...selectedIds];
+  const count = pendingDeleteIds.length;
+  document.getElementById('delete-modal-message').innerHTML =
+    `This action is <strong>permanent</strong> and cannot be undone. <strong>${count} candidate(s)</strong> and all associated documents will be permanently removed.`;
+  openModal('delete-modal');
+});
+
 document.getElementById('bulk-reject').addEventListener('click', async () => {
   if (!selectedIds.size) return;
   const reason = prompt('Enter rejection reason for all selected candidates:');
@@ -590,6 +619,18 @@ candidateRowsTbody.addEventListener('click', async (e) => {
       openModal('reject-modal');
       btn.disabled = false;
       return;
+    } else if (action === 'archive') {
+      const c = allCandidates.find((x) => x.id === id);
+      await api(`/api/candidates/${id}/archive`, { method: 'PATCH' });
+      toast(c && c.isArchived ? 'Candidate unarchived' : 'Candidate archived', 'success');
+    } else if (action === 'delete') {
+      pendingDeleteIds = [id];
+      const c = allCandidates.find((x) => x.id === id);
+      document.getElementById('delete-modal-message').innerHTML =
+        `This action is <strong>permanent</strong> and cannot be undone. <strong>${esc(c ? c.fullName : 'This candidate')}</strong> and all associated documents will be permanently removed.`;
+      openModal('delete-modal');
+      btn.disabled = false;
+      return;
     }
     await loadCandidates();
     if (activeCandidateId === id) refreshModalTabs(id);
@@ -635,7 +676,8 @@ async function loadCandidates() {
   document.getElementById('candidates-table').style.display = '';
 
   try {
-    const data = await api('/api/candidates');
+    const url = showArchived ? '/api/candidates?archived=true' : '/api/candidates';
+    const data = await api(url);
     allCandidates = data.items || [];
     applyFilters();
   } catch (err) {
@@ -799,6 +841,8 @@ async function renderModalOverview(id) {
       <button class="btn btn-sm btn-secondary" data-action="interview" data-id="${esc(id)}" title="Schedule">Schedule</button>
       <button class="btn btn-sm btn-success-ghost action-btn btn-success-ghost" data-action="hire"   data-id="${esc(id)}" title="Hire" style="color:var(--success);border-color:var(--success-dim)">Hire</button>
       <button class="btn btn-sm btn-danger"   data-action="reject"   data-id="${esc(id)}" title="Reject">Reject</button>
+      <button class="btn btn-sm btn-ghost"    data-action="archive"  data-id="${esc(id)}" title="${c.isArchived ? 'Unarchive' : 'Archive'}">${c.isArchived ? 'Unarchive' : 'Archive'}</button>
+      <button class="btn btn-sm btn-danger"   data-action="delete"   data-id="${esc(id)}" title="Delete">Delete</button>
     `;
 
     footer.querySelector('#modal-close-btn-inner').addEventListener('click', () => closeModal('candidate-modal'));
@@ -823,6 +867,20 @@ async function renderModalOverview(id) {
             pendingRejectIds = [id];
             document.getElementById('reject-reason').value = '';
             openModal('reject-modal');
+            btn.disabled = false; return;
+          }
+          if (act === 'archive') {
+            await api(`/api/candidates/${id}/archive`, { method: 'PATCH' });
+            toast(c.isArchived ? 'Candidate unarchived' : 'Candidate archived', 'success');
+            closeModal('candidate-modal');
+            await loadCandidates();
+            btn.disabled = false; return;
+          }
+          if (act === 'delete') {
+            pendingDeleteIds = [id];
+            document.getElementById('delete-modal-message').innerHTML =
+              `This action is <strong>permanent</strong> and cannot be undone. <strong>${esc(c.fullName)}</strong> and all associated documents will be permanently removed.`;
+            openModal('delete-modal');
             btn.disabled = false; return;
           }
           await loadCandidates();
@@ -1069,6 +1127,50 @@ document.getElementById('reject-submit').addEventListener('click', async () => {
     btn.disabled = false;
     pendingRejectIds = [];
   }
+});
+
+// ── DELETE MODAL ───────────────────────────────────────────────
+document.getElementById('delete-confirm-btn').addEventListener('click', async () => {
+  if (!pendingDeleteIds.length) return;
+  const btn = document.getElementById('delete-confirm-btn');
+  btn.disabled = true;
+  try {
+    for (const id of pendingDeleteIds) {
+      await api(`/api/candidates/${id}`, { method: 'DELETE' });
+    }
+    closeModal('delete-modal');
+    toast(`Deleted ${pendingDeleteIds.length} candidate(s)`, 'success');
+    if (activeCandidateId && pendingDeleteIds.includes(activeCandidateId)) {
+      closeModal('candidate-modal');
+    }
+    selectedIds.clear();
+    await loadCandidates();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    pendingDeleteIds = [];
+  }
+});
+
+// ── ARCHIVE TOGGLE ─────────────────────────────────────────────
+const archiveToggleBtn = document.getElementById('archive-toggle');
+const archiveToggleLabel = document.getElementById('archive-toggle-label');
+
+function updateArchiveToggleUI() {
+  archiveToggleBtn.setAttribute('aria-pressed', String(showArchived));
+  archiveToggleBtn.classList.toggle('active', showArchived);
+  archiveToggleLabel.textContent = showArchived ? 'Active Candidates' : 'Archived';
+  // Update bulk archive button label to match context
+  const bulkArchiveBtn = document.getElementById('bulk-archive');
+  if (bulkArchiveBtn) bulkArchiveBtn.title = showArchived ? 'Unarchive selected' : 'Archive selected';
+}
+
+archiveToggleBtn.addEventListener('click', async () => {
+  showArchived = !showArchived;
+  updateArchiveToggleUI();
+  selectedIds.clear();
+  await loadCandidates();
 });
 
 // ── REFRESH ────────────────────────────────────────────────────
