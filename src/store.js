@@ -8,7 +8,7 @@ function makeDefaultAppSettings() {
     hiringDeadline: '',
     companyEmail: config.fromEmail,
     mailboxAddress: config.mailboxAddress,
-    companyName: 'Our Office',
+    companyName: '',
     replyToEmail: '',
     hiringManagerName: '',
     applicationOpenDate: '',
