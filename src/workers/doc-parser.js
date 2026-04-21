@@ -71,14 +71,10 @@ async function extractText(buffer, mimeType, fileName, providedText = '') {
   if ((mime === 'application/pdf' || ext === '.pdf') && buffer && pdfParse) {
     try {
       const parseFunc = typeof pdfParse === 'function' ? pdfParse : pdfParse.default;
-      const data = await pdfParse(buffer);
-      const text = (data.text || '').trim();
-      if (text.length > 0) {
-        return { text, ocrUsed: false };
-      }
-      // Fall through to OCR if no text in PDF (image-only PDF)
+      const data = await parseFunc(buffer);
+      return { text: data.text || '', ocrUsed: false };
     } catch (err) {
-      console.warn(`[doc-parser] PDF extraction error for "${fileName}":`, err.message);
+      console.warn(`[doc-parser] PDF extraction failed for "${fileName}":`, err.message);
     }
   }
 
