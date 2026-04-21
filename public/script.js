@@ -1160,10 +1160,13 @@ const archiveToggleLabel = document.getElementById('archive-toggle-label');
 function updateArchiveToggleUI() {
   archiveToggleBtn.setAttribute('aria-pressed', String(showArchived));
   archiveToggleBtn.classList.toggle('active', showArchived);
-  archiveToggleLabel.textContent = showArchived ? 'Active Candidates' : 'Archived';
+  archiveToggleLabel.textContent = showArchived ? 'Archived' : 'Active Candidates';
   // Update bulk archive button label to match context
   const bulkArchiveBtn = document.getElementById('bulk-archive');
-  if (bulkArchiveBtn) bulkArchiveBtn.title = showArchived ? 'Unarchive selected' : 'Archive selected';
+  if (bulkArchiveBtn) {
+    const labelSpan = bulkArchiveBtn.querySelector('span') || bulkArchiveBtn;
+    labelSpan.textContent = showArchived ? 'Unarchive' : 'Archive';
+  }
 }
 
 archiveToggleBtn.addEventListener('click', async () => {
