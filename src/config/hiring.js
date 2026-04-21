@@ -1,0 +1,3 @@
+// Update the hiringDeadline to be blank instead of a configured fallback.
+const hiringDeadline = ''; // previous code was: const hiringDeadline = fallback;
+// rest of the code...
