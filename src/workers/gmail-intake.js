@@ -31,7 +31,10 @@ const { google } = require('googleapis');
 // Optional text-extraction libs — imported lazily to avoid hard crash if missing
 let pdfParse;
 let mammoth;
-try { pdfParse = require('pdf-parse'); } catch (_) { /* optional */ }
+try {
+  const mod = require('pdf-parse');
+  pdfParse = mod && (mod.default || mod);
+} catch (_) { /* optional */ }
 try { mammoth = require('mammoth'); } catch (_) { /* optional */ }
 
 const { classifyDocument } = require('../docClassifier');
