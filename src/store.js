@@ -5,7 +5,7 @@ const { DEFAULT_TEMPLATES, SCORING_WEIGHTS } = require('./constants');
 
 function makeDefaultAppSettings() {
   return {
-    hiringDeadline: config.defaultDeadline,
+    hiringDeadline: '',
     companyEmail: config.fromEmail,
     mailboxAddress: config.mailboxAddress,
     companyName: 'Our Office',
