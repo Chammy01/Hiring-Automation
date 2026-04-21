@@ -70,6 +70,7 @@ async function extractText(buffer, mimeType, fileName, providedText = '') {
   // PDF
   if ((mime === 'application/pdf' || ext === '.pdf') && buffer && pdfParse) {
     try {
+      const parseFunc = typeof pdfParse === 'function' ? pdfParse : pdfParse.default;
       const data = await pdfParse(buffer);
       const text = (data.text || '').trim();
       if (text.length > 0) {
