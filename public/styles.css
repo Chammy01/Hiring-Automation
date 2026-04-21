@@ -469,6 +469,7 @@ body {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 14px;
+  animation: fade-in 400ms var(--ease) both;
 }
 
 .kpi-card {
@@ -482,7 +483,7 @@ body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   cursor: pointer;
-  transition: background var(--dur), border-color var(--dur), transform 120ms;
+  transition: background var(--dur), border-color var(--dur), transform 200ms var(--ease), box-shadow 200ms var(--ease);
   text-align: left;
   font-family: inherit;
   color: var(--text);
@@ -490,13 +491,15 @@ body {
 
 .kpi-card:hover {
   background: var(--glass-bg-hover);
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
+  border-color: var(--accent);
+  transform: translateY(-3px);
+  box-shadow: 0 0 18px rgba(77,158,255,0.25), 0 8px 24px rgba(0,0,0,0.4);
 }
 
 .kpi-card.active {
   border-color: var(--accent);
   background: var(--accent-dim);
+  box-shadow: 0 0 12px rgba(77,158,255,0.2);
 }
 
 .kpi-icon {
@@ -1385,6 +1388,11 @@ input[type="checkbox"] {
   to   { background-position:  400px 0; }
 }
 
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
 .skeleton {
   background: linear-gradient(
     90deg,
@@ -1443,6 +1451,7 @@ input[type="checkbox"] {
   background-size: 400px 100%;
   animation: shimmer 1.4s ease-in-out infinite;
   border-radius: 4px;
+  transition: background 300ms, min-width 300ms;
 }
 
 /* Audit page */
