@@ -650,6 +650,7 @@ function updateKpiFromFiltered() {
   const interviews  = allCandidates.filter((c) => c.workflowState === 'interviewScheduled').length;
   const hired       = allCandidates.filter((c) => c.workflowState === 'hired').length;
 
+  // kpi-completion is driven by analytics data and cleared separately in loadOps()
   ['kpi-total', 'kpi-shortlisted', 'kpi-interviews', 'kpi-hired'].forEach((id) => {
     document.getElementById(id).classList.remove('skeleton-inline');
   });
@@ -691,6 +692,12 @@ async function loadOps() {
 }
 
 // ── INTEGRATION STATUS ─────────────────────────────────────────
+function integrationBadge(active) {
+  return active
+    ? `<span class="pill pill-green">Connected</span>`
+    : `<span class="pill pill-default">Disconnected</span>`;
+}
+
 function renderIntegrationStatus(data) {
   const gs = data.googleSheets || {};
   const enabled = gs.enabled && gs.configured;
@@ -701,7 +708,7 @@ function renderIntegrationStatus(data) {
       <div class="integration-info">
         <div class="integration-name">Google Sheets</div>
         <div class="integration-meta">
-          ${enabled ? `<span class="pill pill-green">Connected</span>` : `<span class="pill pill-default">Disconnected</span>`}
+          ${integrationBadge(enabled)}
           ${gs.spreadsheetUrl ? `<br><a href="${esc(gs.spreadsheetUrl)}" target="_blank" rel="noreferrer">Open Spreadsheet</a>` : ''}
           ${gs.lastError ? `<br><span style="color:var(--danger);font-size:11px">Error: ${esc(gs.lastError)}</span>` : ''}
         </div>
@@ -711,7 +718,7 @@ function renderIntegrationStatus(data) {
       <div class="integration-item">
         <div class="integration-info">
           <div class="integration-name">${esc(u.label)}</div>
-          <div class="integration-meta">${u.status === 'active' ? `<span class="pill pill-green">Connected</span>` : `<span class="pill pill-default">Disconnected</span>`}</div>
+          <div class="integration-meta">${integrationBadge(u.status === 'active')}</div>
         </div>
       </div>`).join('')}
   `;
@@ -1122,7 +1129,7 @@ async function loadIntegrationsPage() {
         <div class="integration-info">
           <div class="integration-name">Google Sheets Integration</div>
           <div class="integration-meta">
-            ${gs.enabled && gs.configured ? '<span class="pill pill-green">Connected</span>' : '<span class="pill pill-default">Disconnected</span>'}
+            ${integrationBadge(gs.enabled && gs.configured)}
             ${gs.spreadsheetUrl ? `<br><a href="${esc(gs.spreadsheetUrl)}" target="_blank" rel="noreferrer">Open Spreadsheet</a>` : ''}
             ${gs.lastSyncedAt ? `<br><span style="font-size:11px;color:var(--text-muted)">Last sync: ${esc(gs.lastSyncedAt)}</span>` : ''}
             ${gs.lastError ? `<br><span style="color:var(--danger);font-size:11px">Error: ${esc(gs.lastError)}</span>` : ''}
@@ -1134,7 +1141,7 @@ async function loadIntegrationsPage() {
         <div class="integration-item">
           <div class="integration-info">
             <div class="integration-name">${esc(u.label)}</div>
-            <div class="integration-meta">${u.status === 'active' ? `<span class="pill pill-green">Connected</span>` : `<span class="pill pill-default">Disconnected</span>`}</div>
+            <div class="integration-meta">${integrationBadge(u.status === 'active')}</div>
           </div>
         </div>`).join('')}
     `;
