@@ -16,10 +16,7 @@ const { upsertCandidateSheetRows } = require('./integrations/googleSheets');
 const { classifyDocument } = require('./docClassifier');
 const { enqueueDispatch, sendDispatch, getDispatch, listDispatches } = require('./integrations/gmail-dispatcher');
 const { enqueueParsingJob, processParsingJob, getParsingJob, listParsingJobs, enrichCandidateFromFields } = require('./workers/doc-parser');
-
-function nowIso() {
-  return new Date().toISOString();
-}
+const { normalize, nowIso } = require('./utils');
 
 let googleSheetsSyncTimeout = null;
 let latestGoogleSheetsSyncReason = '';
@@ -139,10 +136,6 @@ function triggerGoogleSheetsSync(reason) {
       console.error('Google Sheets sync failed:', error.message);
     });
   }, 1500);
-}
-
-function normalize(value) {
-  return String(value || '').trim().toLowerCase();
 }
 
 function normalizePosition(position) {
@@ -336,17 +329,32 @@ function attachmentMatchesDoc(attachment, docName) {
 
 function applyCompliance(candidate, submittedAt, subject, deadline) {
   const expectedSubject = `Application for ${candidate.position}`;
-  const deadlineDate = new Date(deadline || config.defaultDeadline);
-  const actualDate = submittedAt ? new Date(submittedAt) : new Date();
 
-  candidate.compliance.subjectFormatValid = subject === expectedSubject;
-  candidate.compliance.submittedBeforeDeadline = actualDate <= deadlineDate;
+  // Use case-insensitive trimmed comparison to avoid false disqualifications
+  // from capitalisation or minor whitespace differences.
+  candidate.compliance.subjectFormatValid =
+    String(subject || '').trim().toLowerCase() === expectedSubject.trim().toLowerCase();
+
+  // Only enforce the deadline when one has been configured.  An empty/missing
+  // deadline previously produced `new Date('')` = Invalid Date, which caused
+  // every submission to be incorrectly marked as "submitted after deadline".
+  const deadlineDate = deadline ? new Date(deadline) : null;
+  const validDeadline = deadlineDate && !isNaN(deadlineDate.getTime());
+
+  if (validDeadline) {
+    const actualDate = submittedAt ? new Date(submittedAt) : new Date();
+    candidate.compliance.submittedBeforeDeadline = actualDate <= deadlineDate;
+  } else {
+    // No valid deadline configured — skip the deadline check.
+    candidate.compliance.submittedBeforeDeadline = true;
+  }
+
   candidate.compliance.disqualified =
     !candidate.compliance.subjectFormatValid || !candidate.compliance.submittedBeforeDeadline;
 
   const reasons = [];
   if (!candidate.compliance.subjectFormatValid) {
-    reasons.push(`Invalid subject format. Expected \"${expectedSubject}\"`);
+    reasons.push(`Invalid subject format. Expected "${expectedSubject}"`);
   }
   if (!candidate.compliance.submittedBeforeDeadline) {
     reasons.push(`Submitted after deadline ${deadlineDate.toISOString()}`);
@@ -701,25 +709,56 @@ function updateCandidateStatus(candidateId, action, payload = {}) {
   return result;
 }
 
-function retryEmailEvent(eventId) {
-  return updateStore((state) => {
-    const event = state.emailEvents.find((x) => x.id === eventId);
-    if (!event) {
+async function retryEmailEvent(eventId) {
+  // Retrieve the email event and decrypt its body.
+  let emailEvent;
+  updateStore((state) => {
+    emailEvent = state.emailEvents.find((x) => x.id === eventId);
+    if (!emailEvent) {
       throw new Error('Email event not found');
     }
+    state.__result = null;
+    return state;
+  });
 
-    event.retries = (event.retries || 0) + 1;
-    event.status = EMAIL_STATUSES.SENT;
-    event.lastError = '';
+  const body = decryptText(emailEvent.bodyEncrypted);
 
-    const queueItem = state.retryQueue.find((x) => x.emailEventId === eventId && x.status === 'pending');
-    if (queueItem) {
-      queueItem.status = 'resolved';
-      queueItem.resolvedAt = nowIso();
+  // Enqueue a real outbound dispatch so the message is actually sent.
+  const { dispatch } = enqueueDispatch({
+    to: emailEvent.to,
+    from: emailEvent.from,
+    subject: emailEvent.subject,
+    body,
+    candidateId: emailEvent.candidateId || undefined
+  });
+
+  // Attempt to send (delegates to Gmail API or simulated send).
+  const sent = await sendDispatch(dispatch.id);
+  const succeeded = sent.status === 'sent';
+
+  // Update the original email event to reflect the retry outcome.
+  return updateStore((state) => {
+    const event = state.emailEvents.find((x) => x.id === eventId);
+    if (event) {
+      event.retries = (event.retries || 0) + 1;
+      event.status = succeeded ? EMAIL_STATUSES.SENT : EMAIL_STATUSES.FAILED;
+      event.lastError = succeeded ? '' : (sent.lastError || 'Send failed');
+
+      const queueItem = state.retryQueue.find(
+        (x) => x.emailEventId === eventId && x.status === 'pending'
+      );
+      if (queueItem && succeeded) {
+        queueItem.status = 'resolved';
+        queueItem.resolvedAt = nowIso();
+      }
+
+      addAuditLog(state, 'email.retry_processed', event.candidateId, {
+        eventId,
+        dispatchId: dispatch.id,
+        succeeded
+      });
+      state.__result = decryptEmailEvent(event);
     }
-
-    addAuditLog(state, 'email.retry_processed', event.candidateId, { eventId });
-    state.__result = decryptEmailEvent(event);
     return state;
   }).__result;
 }
@@ -829,12 +868,12 @@ function verifyCandidateExtraction(candidateId, updates = {}) {
       }
     }
 
-    const pendingItem = state.verificationQueue.find(
+    const pendingItems = state.verificationQueue.filter(
       (item) => item.candidateId === candidateId && item.status === 'pending'
     );
-    if (pendingItem) {
-      pendingItem.status = 'resolved';
-      pendingItem.resolvedAt = nowIso();
+    for (const item of pendingItems) {
+      item.status = 'resolved';
+      item.resolvedAt = nowIso();
     }
 
     candidate.extractionConfidence = 'high';
@@ -878,6 +917,7 @@ function getDashboard() {
   }, {});
 
   const topCandidates = [...state.candidates]
+    .filter((c) => !c.isArchived)
     .sort((a, b) => b.recommendation.score - a.recommendation.score)
     .slice(0, 5)
     .map((candidate) => ({
@@ -1230,11 +1270,13 @@ function deleteCandidate(candidateId) {
     }
     const [candidate] = state.candidates.splice(idx, 1);
 
-    // Clean up related in-memory queues
+    // Clean up all related in-memory queue / event records
     state.emailEvents         = state.emailEvents.filter((e) => e.candidateId !== candidateId);
     state.retryQueue          = state.retryQueue.filter((r) => r.candidateId !== candidateId);
     state.extractionQueue     = state.extractionQueue.filter((q) => q.candidateId !== candidateId);
     state.verificationQueue   = state.verificationQueue.filter((q) => q.candidateId !== candidateId);
+    state.outboundDispatches  = (state.outboundDispatches || []).filter((d) => d.candidateId !== candidateId);
+    state.parsingJobs         = (state.parsingJobs || []).filter((j) => j.candidateId !== candidateId);
 
     addAuditLog(state, 'candidate.deleted', candidateId, { fullName: candidate.fullName });
     state.__result = candidate;

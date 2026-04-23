@@ -1,8 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const { z } = require('zod');
-const { config } = require('./config');
-const { requirePermission } = require('./security');
+const { config, validateConfig } = require('./config');
+const { requirePermission, resolveRoleFromApiKey, anyApiKeyConfigured } = require('./security');
 const {
   createCandidateFromApplication,
   submitCandidateDocuments,
@@ -51,17 +51,42 @@ const {
   archiveCandidate,
   deleteCandidate
 } = require('./services');
+const { paginate } = require('./utils');
 
 const app = express();
-app.use(cors());
+
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+// Only enable CORS when CORS_ORIGIN is explicitly configured.  The default
+// single-server deployment serves its own frontend from the same origin and
+// does not need CORS headers.  Setting CORS_ORIGIN=* opts back into
+// unrestricted cross-origin access (not recommended for production).
+if (config.corsOrigin) {
+  const allowedOrigins = config.corsOrigin === '*'
+    ? '*'
+    : config.corsOrigin.split(',').map((o) => o.trim()).filter(Boolean);
+  app.use(cors({ origin: allowedOrigins }));
+}
+
 app.use(express.json({ limit: '6mb' }));
 app.use(express.static('public'));
 
+// ─── Rate limiter ─────────────────────────────────────────────────────────────
 function createRateLimiter({ windowMs, max }) {
   const buckets = new Map();
   return (req, res, next) => {
     const key = `${req.ip}:${req.path}`;
     const now = Date.now();
+
+    // Periodically evict expired buckets to prevent unbounded memory growth.
+    // Using a probabilistic cleanup (≈1 % of requests) keeps the overhead low.
+    if (buckets.size > 0 && Math.random() < 0.01) {
+      for (const [k, b] of buckets) {
+        if (now - b.start > windowMs) {
+          buckets.delete(k);
+        }
+      }
+    }
+
     const bucket = buckets.get(key);
     if (!bucket || now - bucket.start > windowMs) {
       buckets.set(key, { start: now, count: 1 });
@@ -75,13 +100,33 @@ function createRateLimiter({ windowMs, max }) {
   };
 }
 
+// ─── Authentication middleware ────────────────────────────────────────────────
+/**
+ * Validate the presented API key and attach the resolved role to the request.
+ *
+ * Behaviour:
+ *  - If at least one role-specific key is configured (API_KEY_ADMIN /
+ *    API_KEY_HR / API_KEY_VIEWER / HR_API_KEY), the presented key MUST match
+ *    one of them; otherwise the request is rejected with 401.
+ *  - If NO keys are configured (dev / test mode), authentication is skipped
+ *    and the role is read from the x-role header downstream.
+ */
 function requireApiKey(req, res, next) {
-  if (!config.hrApiKey) {
+  if (!anyApiKeyConfigured()) {
+    // Dev / test mode — no keys configured, skip auth.
     return next();
   }
-  if (req.headers['x-api-key'] !== config.hrApiKey) {
+
+  const key = req.headers['x-api-key'];
+  const role = resolveRoleFromApiKey(key);
+
+  if (!role) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+
+  // Attach the server-resolved role so that resolveRole() in security.js
+  // will use it instead of the (now-ignored) x-role header.
+  req._resolvedRole = role;
   return next();
 }
 
@@ -94,6 +139,7 @@ const sensitiveActionLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
 function secureWrite(permission) {
   return [sensitiveActionLimiter, requireApiKey, requirePermission(permission)];
 }
+
 
 const intakeSchema = z.object({
   fullName: z.string().min(2),
@@ -221,7 +267,11 @@ app.get('/api/candidates', secure('read:candidates'), (req, res) => {
     status: req.query.status,
     archived: req.query.archived
   };
-  res.json({ items: listCandidates(filters) });
+  const page = req.query.page ? parseInt(req.query.page, 10) : null;
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+  const all = listCandidates(filters);
+  const result = paginate(all, page, limit);
+  res.json(result.limit ? result : { items: result.items });
 });
 
 app.get('/api/candidates/:id', secure('read:candidates'), (req, res) => {
@@ -488,21 +538,29 @@ app.get('/api/retry-queue', secure('read:email'), (_req, res) => {
   res.json({ items: listRetryQueue() });
 });
 
-app.post('/api/email-events/:id/retry', secureWrite('write:candidates'), (req, res) => {
+app.post('/api/email-events/:id/retry', secureWrite('write:candidates'), async (req, res) => {
   try {
-    const event = retryEmailEvent(req.params.id);
+    const event = await retryEmailEvent(req.params.id);
     return res.json(event);
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
 });
 
-app.get('/api/audit-logs', secure('read:audit'), (_req, res) => {
-  res.json({ items: listAuditLogs() });
+app.get('/api/audit-logs', secure('read:audit'), (req, res) => {
+  const page = req.query.page ? parseInt(req.query.page, 10) : null;
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+  const all = listAuditLogs();
+  const result = paginate(all, page, limit);
+  res.json(result.limit ? result : { items: result.items });
 });
 
-app.get('/api/email-events', secure('read:email'), (_req, res) => {
-  res.json({ items: listEmailEvents() });
+app.get('/api/email-events', secure('read:email'), (req, res) => {
+  const page = req.query.page ? parseInt(req.query.page, 10) : null;
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+  const all = listEmailEvents();
+  const result = paginate(all, page, limit);
+  res.json(result.limit ? result : { items: result.items });
 });
 
 app.get('/api/backup', secureWrite('write:backup'), (_req, res) => {
