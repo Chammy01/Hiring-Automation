@@ -103,8 +103,25 @@ function ensureStore() {
 
 function readStore() {
   const absPath = ensureStore();
-  const data = fs.readFileSync(absPath, 'utf8');
-  return normalizeState(JSON.parse(data));
+  let raw;
+  try {
+    raw = fs.readFileSync(absPath, 'utf8');
+  } catch (err) {
+    console.error('[store] Failed to read store file, falling back to initial state:', err.message);
+    return normalizeState({});
+  }
+  try {
+    return normalizeState(JSON.parse(raw));
+  } catch (err) {
+    console.error('[store] Store file is corrupt (JSON parse failed), falling back to initial state:', err.message);
+    // Back up the corrupt file so the operator can inspect it.
+    try {
+      const backupPath = absPath + '.corrupt-' + Date.now();
+      fs.writeFileSync(backupPath, raw);
+      console.error(`[store] Corrupt file backed up to: ${backupPath}`);
+    } catch (_) { /* best-effort */ }
+    return normalizeState({});
+  }
 }
 
 function writeStore(state) {
