@@ -43,7 +43,7 @@ test('compliance: subject in all-caps passes (case-insensitive)', () => {
     subject: 'APPLICATION FOR ADMINISTRATIVE AIDE IV (CLERK II)',
     submittedAt: '2020-01-01T00:00:00.000Z'
   });
-  assert.equal(result.compliance.subjectFormatValid, true, 'Uppercase subject should be case-insensitively valid');
+  assert.equal(result.compliance.subjectFormatValid, true, 'Uppercase subject should be case-insensitive valid');
   assert.equal(result.compliance.disqualified, false);
 });
 

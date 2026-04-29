@@ -620,7 +620,7 @@ function updateScoringWeights(partialWeights = {}) {
       ...partialWeights
     };
     const sum = Object.values(updated).reduce((acc, n) => acc + n, 0);
-    if (Math.abs(sum - 100) > 0.01) {
+    if (sum !== 100) {
       throw new Error(`Scoring weights must sum to 100 (current total: ${sum})`);
     }
     state.settings.scoringWeights = updated;
