@@ -4,7 +4,7 @@
   "description": "Automated hiring workflow",
   "main": "src/server.js",
   "scripts": {
-    "test": "node --test tests/*.test.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "db:migrate": "node src/db/migrate.js",

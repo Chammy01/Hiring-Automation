@@ -63,6 +63,24 @@ test('scoring weights can be updated', () => {
   const before = getScoringWeights();
   assert.equal(before.awards, 5);
 
-  const updated = updateScoringWeights({ awards: 12 });
+  // Provide a full weight set that sums to exactly 100.
+  const updated = updateScoringWeights({
+    docsComplete: 23,
+    eligibility: 20,
+    experience: 20,
+    education: 15,
+    trainings: 10,
+    awards: 12
+  });
   assert.equal(updated.awards, 12);
+  const total = Object.values(updated).reduce((s, n) => s + n, 0);
+  assert.equal(total, 100);
+});
+
+test('updateScoringWeights rejects weights that do not sum to 100', () => {
+  const { updateScoringWeights } = require('../src/services');
+  assert.throws(
+    () => updateScoringWeights({ docsComplete: 30, eligibility: 20, experience: 20, education: 15, trainings: 10, awards: 12 }),
+    /sum to 100/
+  );
 });

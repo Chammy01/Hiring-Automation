@@ -336,11 +336,17 @@ function attachmentMatchesDoc(attachment, docName) {
 
 function applyCompliance(candidate, submittedAt, subject, deadline) {
   const expectedSubject = `Application for ${candidate.position}`;
-  const deadlineDate = new Date(deadline || config.defaultDeadline);
+
+  // Build a valid deadline date only when the deadline string is non-empty and parseable.
+  const rawDeadline = deadline || config.defaultDeadline;
+  const deadlineDate = rawDeadline ? new Date(rawDeadline) : null;
+  const deadlineIsValid = deadlineDate && !isNaN(deadlineDate.getTime());
+
   const actualDate = submittedAt ? new Date(submittedAt) : new Date();
 
   candidate.compliance.subjectFormatValid = subject.toLowerCase() === expectedSubject.toLowerCase();
-  candidate.compliance.submittedBeforeDeadline = actualDate <= deadlineDate;
+  // When no deadline is configured, the submission-timing check always passes.
+  candidate.compliance.submittedBeforeDeadline = !deadlineIsValid || actualDate <= deadlineDate;
   candidate.compliance.disqualified =
     !candidate.compliance.subjectFormatValid || !candidate.compliance.submittedBeforeDeadline;
 
