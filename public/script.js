@@ -551,22 +551,11 @@ document.getElementById('bulk-delete').addEventListener('click', () => {
   openModal('delete-modal');
 });
 
-document.getElementById('bulk-reject').addEventListener('click', async () => {
+document.getElementById('bulk-reject').addEventListener('click', () => {
   if (!selectedIds.size) return;
-  const reason = prompt('Enter rejection reason for all selected candidates:');
-  if (!reason?.trim()) return;
-  const ids = [...selectedIds];
-  let ok = 0; let fail = 0;
-  for (const id of ids) {
-    try {
-      await api(`/api/candidates/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
-      ok++;
-    } catch { fail++; }
-  }
-  if (ok) toast(`Rejected ${ok} candidate(s)`, 'success');
-  if (fail) toast(`Failed to reject ${fail} candidate(s)`, 'error');
-  selectedIds.clear();
-  await loadCandidates();
+  pendingRejectIds = [...selectedIds];
+  document.getElementById('reject-reason').value = '';
+  openModal('reject-modal');
 });
 
 // ── ROW ACTION HANDLER ─────────────────────────────────────────
@@ -1120,6 +1109,7 @@ document.getElementById('reject-submit').addEventListener('click', async () => {
     if (activeCandidateId && pendingRejectIds.includes(activeCandidateId)) {
       closeModal('candidate-modal');
     }
+    selectedIds.clear();
     await loadCandidates();
   } catch (err) {
     toast(err.message, 'error');
