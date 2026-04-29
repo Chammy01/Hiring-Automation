@@ -104,7 +104,14 @@ function ensureStore() {
 function readStore() {
   const absPath = ensureStore();
   const data = fs.readFileSync(absPath, 'utf8');
-  return normalizeState(JSON.parse(data));
+  let parsed;
+  try {
+    parsed = JSON.parse(data);
+  } catch (_err) {
+    console.error('[store] store.json is corrupted — resetting to initial state');
+    return normalizeState({});
+  }
+  return normalizeState(parsed);
 }
 
 function writeStore(state) {

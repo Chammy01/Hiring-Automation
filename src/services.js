@@ -336,11 +336,17 @@ function attachmentMatchesDoc(attachment, docName) {
 
 function applyCompliance(candidate, submittedAt, subject, deadline) {
   const expectedSubject = `Application for ${candidate.position}`;
-  const deadlineDate = new Date(deadline || config.defaultDeadline);
+
+  // Build a valid deadline date only when the deadline string is non-empty and parseable.
+  const rawDeadline = deadline || config.defaultDeadline;
+  const deadlineDate = rawDeadline ? new Date(rawDeadline) : null;
+  const deadlineIsValid = deadlineDate && !isNaN(deadlineDate.getTime());
+
   const actualDate = submittedAt ? new Date(submittedAt) : new Date();
 
-  candidate.compliance.subjectFormatValid = subject === expectedSubject;
-  candidate.compliance.submittedBeforeDeadline = actualDate <= deadlineDate;
+  candidate.compliance.subjectFormatValid = subject.toLowerCase() === expectedSubject.toLowerCase();
+  // When no deadline is configured, the submission-timing check always passes.
+  candidate.compliance.submittedBeforeDeadline = !deadlineIsValid || actualDate <= deadlineDate;
   candidate.compliance.disqualified =
     !candidate.compliance.subjectFormatValid || !candidate.compliance.submittedBeforeDeadline;
 
@@ -609,10 +615,15 @@ function calculateRecommendation(candidateId) {
 
 function updateScoringWeights(partialWeights = {}) {
   return updateStore((state) => {
-    state.settings.scoringWeights = {
+    const updated = {
       ...state.settings.scoringWeights,
       ...partialWeights
     };
+    const sum = Object.values(updated).reduce((acc, n) => acc + n, 0);
+    if (sum !== 100) {
+      throw new Error(`Scoring weights must sum to 100 (current total: ${sum})`);
+    }
+    state.settings.scoringWeights = updated;
     addAuditLog(state, 'scoring.weights_updated', null, state.settings.scoringWeights);
     state.__result = state.settings.scoringWeights;
     return state;

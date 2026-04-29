@@ -59,6 +59,14 @@ app.use(express.static('public'));
 
 function createRateLimiter({ windowMs, max }) {
   const buckets = new Map();
+  // Periodically evict expired buckets to prevent unbounded map growth.
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, bucket] of buckets) {
+      if (now - bucket.start > windowMs) buckets.delete(key);
+    }
+  }, windowMs).unref();
+
   return (req, res, next) => {
     const key = `${req.ip}:${req.path}`;
     const now = Date.now();
@@ -221,7 +229,21 @@ app.get('/api/candidates', secure('read:candidates'), (req, res) => {
     status: req.query.status,
     archived: req.query.archived
   };
-  res.json({ items: listCandidates(filters) });
+  const allItems = listCandidates(filters);
+
+  // Pagination — only applied when the `limit` query param is provided.
+  // When omitted, the full list is returned for backward compatibility.
+  const limitParam = parseInt(req.query.limit, 10);
+  if (!limitParam || limitParam <= 0) {
+    return res.json({ items: allItems, total: allItems.length });
+  }
+  const limit = Math.min(limitParam, 200);
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const total = allItems.length;
+  const totalPages = Math.ceil(total / limit);
+  const start = (page - 1) * limit;
+  const items = allItems.slice(start, start + limit);
+  return res.json({ items, total, page, limit, totalPages });
 });
 
 app.get('/api/candidates/:id', secure('read:candidates'), (req, res) => {
@@ -341,9 +363,22 @@ app.get('/api/verification-queue', secure('read:candidates'), (_req, res) => {
   res.json({ items: listVerificationQueue() });
 });
 
+const verifyExtractionSchema = z.object({
+  educationalAttainment: z.string().optional(),
+  workExperience: z.string().optional(),
+  awards: z.string().optional(),
+  trainings: z.string().optional(),
+  cscEligibility: z.string().optional(),
+  extractionConfidence: z.enum(['low', 'medium', 'high']).optional()
+});
+
 app.post('/api/candidates/:id/verify-extraction', secureWrite('write:candidates'), (req, res) => {
+  const parsed = verifyExtractionSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
   try {
-    const candidate = verifyCandidateExtraction(req.params.id, req.body || {});
+    const candidate = verifyCandidateExtraction(req.params.id, parsed.data);
     return res.json(candidate);
   } catch (error) {
     return res.status(400).json({ error: error.message });
@@ -676,6 +711,15 @@ app.patch('/api/candidates/:id/enrich', secureWrite('write:candidates'), (req, r
 function createServer() {
   return app;
 }
+
+// Global error handler — must be the last middleware registered.
+// Catches errors thrown/passed from async route handlers.
+// eslint-disable-next-line no-unused-vars
+app.use((err, _req, res, _next) => {
+  console.error('[server] Unhandled error:', err.message || err);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({ error: err.message || 'Internal server error' });
+});
 
 if (require.main === module) {
   app.listen(config.port, () => {

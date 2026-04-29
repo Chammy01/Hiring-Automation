@@ -1,5 +1,7 @@
 require('dotenv').config();
 
+const DEV_DEFAULT_ENCRYPTION_KEY = 'dev-local-encryption-key-change-this-dev-local-encryption-key';
+
 const config = {
   port: Number(process.env.PORT || 3000),
   dataFile: process.env.DATA_FILE || 'data/store.json',
@@ -9,7 +11,7 @@ const config = {
   roleHeader: process.env.ROLE_HEADER || 'x-role',
   encryptionKey:
     process.env.ENCRYPTION_KEY ||
-    'dev-local-encryption-key-change-this-dev-local-encryption-key',
+    DEV_DEFAULT_ENCRYPTION_KEY,
   mailboxAddress: process.env.MAILBOX_ADDRESS || 'applications@company.local',
   googleSheetsEnabled: String(process.env.GOOGLE_SHEETS_ENABLED || '').toLowerCase() === 'true',
   googleSheetsCredentialsJson: process.env.GOOGLE_SHEETS_CREDENTIALS_JSON || '',
@@ -39,5 +41,16 @@ const config = {
   ocrWorkerConcurrency: Number(process.env.OCR_WORKER_CONCURRENCY || 2),
   ocrWorkerPollMs: Number(process.env.OCR_WORKER_POLL_MS || 5000)
 };
+
+// Warn if running outside test mode with the default insecure encryption key.
+if (
+  config.encryptionKey === DEV_DEFAULT_ENCRYPTION_KEY &&
+  process.env.NODE_ENV !== 'test'
+) {
+  console.warn(
+    '[config] WARNING: ENCRYPTION_KEY is set to the default insecure development value. ' +
+    'Set a strong, unique ENCRYPTION_KEY environment variable before deploying to production.'
+  );
+}
 
 module.exports = { config };
