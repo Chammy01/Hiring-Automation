@@ -22,10 +22,10 @@
       "awards": 5
     },
     "appSettings": {
-      "hiringDeadline": "2026-04-07T23:59:59+08:00",
+      "hiringDeadline": "",
       "companyEmail": "hr@company.local",
       "mailboxAddress": "applications@company.local",
-      "companyName": "Our Office",
+      "companyName": "",
       "replyToEmail": "",
       "hiringManagerName": "",
       "applicationOpenDate": "",
