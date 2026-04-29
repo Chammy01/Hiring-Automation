@@ -6,3 +6,4 @@ coverage/
 credentials.json
 data/gmail-token.json
 data/gmail-processed-ids.json
+data/store.json
