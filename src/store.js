@@ -47,7 +47,9 @@ const initialState = {
         lastSyncedAt: '',
         lastError: ''
       }
-    }
+    },
+    customPositions: [],
+    webhooks: []
   }
 };
 
@@ -84,7 +86,13 @@ function normalizeState(state = {}) {
           lastSyncedAt: googleSheetsState.lastSyncedAt || '',
           lastError: googleSheetsState.lastError || ''
         }
-      }
+      },
+      customPositions: Array.isArray((state.settings || {}).customPositions)
+        ? state.settings.customPositions
+        : [],
+      webhooks: Array.isArray((state.settings || {}).webhooks)
+        ? state.settings.webhooks
+        : []
     }
   };
 }
@@ -116,7 +124,15 @@ function readStore() {
 
 function writeStore(state) {
   const absPath = ensureStore();
-  fs.writeFileSync(absPath, JSON.stringify(state, null, 2));
+  const tmpPath = `${absPath}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2));
+    fs.renameSync(tmpPath, absPath);
+  } catch (err) {
+    console.error('[store] Failed to write store:', err.message);
+    try { fs.unlinkSync(tmpPath); } catch (_) { /* ignore cleanup error */ }
+    throw err;
+  }
 }
 
 function updateStore(updater) {
@@ -133,10 +149,29 @@ function updateStore(updater) {
   return next;
 }
 
+/**
+ * Variant of updateStore that returns a caller-specified result value via closure
+ * rather than the `__result` side-channel.  The updater receives (state) and must
+ * return the mutated state.  The caller captures the result in a local variable:
+ *
+ *   let result;
+ *   updateStoreWithResult((state) => {
+ *     result = computeSomething(state);
+ *     return state;
+ *   });
+ *   return result;
+ */
+function updateStoreWithResult(updater) {
+  // This is a thin alias — the actual result capture is done via closure in the
+  // caller.  The function exists to make the pattern explicit and searchable.
+  return updateStore(updater);
+}
+
 module.exports = {
   readStore,
   writeStore,
   updateStore,
+  updateStoreWithResult,
   initialState,
   normalizeState,
   makeDefaultAppSettings
