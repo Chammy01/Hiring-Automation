@@ -45,6 +45,7 @@ const {
   registerWebhook,
   deleteWebhook,
   listWebhooks,
+  sendDeadlineReminders,
   startReminderScheduler,
   // New modules
   queueOutboundDispatch,
@@ -920,7 +921,6 @@ app.delete('/api/webhooks/:id', secureWrite('write:candidates'), (req, res) => {
 // ─── Reminder trigger ─────────────────────────────────────────────────────────
 
 app.post('/api/reminders/send', secureWrite('write:candidates'), (req, res) => {
-  const { sendDeadlineReminders } = require('./services');
   try {
     const result = sendDeadlineReminders();
     return res.json(result);
