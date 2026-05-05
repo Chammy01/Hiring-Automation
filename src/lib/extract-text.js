@@ -55,7 +55,7 @@ async function extractText(buffer, mimeType, fileName, opts = {}) {
     ({ providedText = '', ocrEnabled = false } = opts);
   }
 
-  if (providedText && providedText.trim().length > 0) {
+  if (providedText && providedText.trim().length > 20) {
     return { text: providedText, ocrUsed: false };
   }
 
