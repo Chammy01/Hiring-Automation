@@ -181,10 +181,6 @@ function parseStructuredFields(text, fileName = '') {
 
 // ─── Job lifecycle (JSON store) ───────────────────────────────────────────────
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
 /**
  * Enqueue a document parsing job.
  *
@@ -281,7 +277,7 @@ async function processParsingJob(jobId, runtimeOpts = {}) {
       buffer,
       job.mimeType,
       job.fileName,
-      job.text || ''
+      { providedText: job.text || '', ocrEnabled: config.ocrEnabled }
     );
 
     const { fields, confidence, notes } = parseStructuredFields(rawText, job.fileName);

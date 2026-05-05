@@ -45,9 +45,17 @@ function loadTesseract() {
  * @returns {Promise<{ text: string, ocrUsed: boolean }>}
  */
 async function extractText(buffer, mimeType, fileName, opts = {}) {
-  const { providedText = '', ocrEnabled = false } = opts;
+  // Support both the old string API (providedText as 4th positional arg)
+  // and the new object API for backward compatibility with existing tests.
+  let providedText, ocrEnabled;
+  if (typeof opts === 'string') {
+    providedText = opts;
+    ocrEnabled = false;
+  } else {
+    ({ providedText = '', ocrEnabled = false } = opts);
+  }
 
-  if (providedText && providedText.trim().length > 20) {
+  if (providedText && providedText.trim().length > 0) {
     return { text: providedText, ocrUsed: false };
   }
 

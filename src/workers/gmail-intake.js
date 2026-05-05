@@ -28,15 +28,7 @@ const https = require('node:https');
 const readline = require('node:readline');
 const { google } = require('googleapis');
 
-// Optional text-extraction libs — imported lazily to avoid hard crash if missing
-let pdfParse;
-let mammoth;
-try {
-  const mod = require('pdf-parse');
-  pdfParse = mod && (mod.default || mod);
-} catch (_) { /* optional */ }
-try { mammoth = require('mammoth'); } catch (_) { /* optional */ }
-
+const { extractText: extractTextShared } = require('../lib/extract-text');
 const { classifyDocument } = require('../docClassifier');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -139,42 +131,6 @@ function saveProcessedIds(ids) {
   const dir = path.dirname(PROCESSED_IDS_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(PROCESSED_IDS_PATH, JSON.stringify([...ids]));
-}
-
-// ─── Text extraction ──────────────────────────────────────────────────────────
-
-async function extractText(buffer, mimeType, fileName) {
-  const mime = String(mimeType || '').toLowerCase();
-  const ext = path.extname(String(fileName || '')).toLowerCase();
-
-  if ((mime === 'application/pdf' || ext === '.pdf') && pdfParse) {
-    try {
-      const parseFunc = typeof pdfParse === 'function' ? pdfParse : pdfParse.default;
-      const data = await parseFunc(buffer);
-      return data.text || '';
-    } catch (err) {
-      console.warn(`[gmail-intake] PDF extraction failed for "${fileName}":`, err.message);
-      return '';
-    }
-  }
-
-  if (
-    (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      mime === 'application/msword' ||
-      ext === '.docx' ||
-      ext === '.doc') &&
-    mammoth
-  ) {
-    try {
-      const result = await mammoth.extractRawText({ buffer });
-      return result.value || '';
-    } catch (err) {
-      console.warn(`[gmail-intake] DOCX extraction failed for "${fileName}":`, err.message);
-      return '';
-    }
-  }
-
-  return '';
 }
 
 // ─── Candidate matching strategy (C) ─────────────────────────────────────────
@@ -441,7 +397,8 @@ async function processEmail(gmail, message, processedIds) {
 
     let text = '';
     try {
-      text = await extractText(buffer, mimeType, fileName);
+      const extracted = await extractTextShared(buffer, mimeType, fileName, {});
+      text = extracted.text || '';
     } catch (err) {
       console.warn(`[gmail-intake] Extraction error for "${fileName}":`, err.message);
     }
