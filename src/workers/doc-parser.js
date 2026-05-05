@@ -33,98 +33,8 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const { readStore, updateStore } = require('../store');
 const { config } = require('../config');
-
-// ─── Optional text extraction libs ───────────────────────────────────────────
-
-let pdfParse;
-let mammoth;
-let Tesseract;
-
-try { pdfParse = require('pdf-parse'); } catch (_) { /* optional */ }
-try { mammoth = require('mammoth'); } catch (_) { /* optional */ }
-if (config.ocrEnabled) {
-  try { Tesseract = require('tesseract.js'); } catch (_) {
-    console.warn('[doc-parser] tesseract.js not available — OCR disabled');
-  }
-}
-
-// ─── Text extraction ──────────────────────────────────────────────────────────
-
-/**
- * Extract raw text from a document buffer.
- *
- * @param {Buffer|null} buffer  - file content (may be null if only text provided)
- * @param {string}      mimeType
- * @param {string}      fileName
- * @param {string}      [providedText] - pre-extracted text (skips extraction if non-empty)
- * @returns {Promise<{ text: string, ocrUsed: boolean }>}
- */
-async function extractText(buffer, mimeType, fileName, providedText = '') {
-  if (providedText && providedText.trim().length > 20) {
-    return { text: providedText, ocrUsed: false };
-  }
-
-  const mime = String(mimeType || '').toLowerCase();
-  const ext = path.extname(String(fileName || '')).toLowerCase();
-
-  // PDF
-  if ((mime === 'application/pdf' || ext === '.pdf') && buffer && pdfParse) {
-    try {
-      const parseFunc = typeof pdfParse === 'function' ? pdfParse : pdfParse.default;
-      const data = await parseFunc(buffer);
-      return { text: data.text || '', ocrUsed: false };
-    } catch (err) {
-      console.warn(`[doc-parser] PDF extraction failed for "${fileName}":`, err.message);
-    }
-  }
-
-  // DOCX / DOC
-  if (
-    (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      mime === 'application/msword' ||
-      ext === '.docx' ||
-      ext === '.doc') &&
-    buffer &&
-    mammoth
-  ) {
-    try {
-      const result = await mammoth.extractRawText({ buffer });
-      const text = (result.value || '').trim();
-      if (text.length > 0) {
-        return { text, ocrUsed: false };
-      }
-    } catch (err) {
-      console.warn(`[doc-parser] DOCX extraction error for "${fileName}":`, err.message);
-    }
-  }
-
-  // Plain text
-  if ((mime === 'text/plain' || ext === '.txt') && buffer) {
-    return { text: buffer.toString('utf8'), ocrUsed: false };
-  }
-
-  // OCR fallback for images or when native extraction yielded nothing
-  if (config.ocrEnabled && Tesseract && buffer) {
-    const isImage =
-      mime.startsWith('image/') ||
-      ['.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.gif', '.webp'].includes(ext);
-    const isPdf = mime === 'application/pdf' || ext === '.pdf';
-
-    if (isImage || isPdf) {
-      try {
-        console.log(`[doc-parser] Running OCR on "${fileName}"`);
-        const { data: { text } } = await Tesseract.recognize(buffer, 'eng', {
-          logger: () => {} // suppress progress logs
-        });
-        return { text: (text || '').trim(), ocrUsed: true };
-      } catch (err) {
-        console.warn(`[doc-parser] OCR failed for "${fileName}":`, err.message);
-      }
-    }
-  }
-
-  return { text: providedText || '', ocrUsed: false };
-}
+const { nowIso } = require('../utils');
+const { extractText } = require('../lib/extract-text');
 
 // ─── Structured field parsing ─────────────────────────────────────────────────
 
@@ -271,10 +181,6 @@ function parseStructuredFields(text, fileName = '') {
 
 // ─── Job lifecycle (JSON store) ───────────────────────────────────────────────
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
 /**
  * Enqueue a document parsing job.
  *
@@ -371,7 +277,7 @@ async function processParsingJob(jobId, runtimeOpts = {}) {
       buffer,
       job.mimeType,
       job.fileName,
-      job.text || ''
+      { providedText: job.text || '', ocrEnabled: config.ocrEnabled }
     );
 
     const { fields, confidence, notes } = parseStructuredFields(rawText, job.fileName);

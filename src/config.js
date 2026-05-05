@@ -8,7 +8,13 @@ const config = {
   defaultDeadline: process.env.DOCUMENT_DEADLINE || '',
   fromEmail: process.env.FROM_EMAIL || 'hr@company.local',
   hrApiKey: process.env.HR_API_KEY || '',
+  // When HR_API_KEY is set, authenticated requests get this role instead of
+  // reading the role from the (attacker-controlled) request header.
+  // Defaults to 'hr' so a single shared API key grants full HR access.
+  hrDefaultRole: process.env.HR_DEFAULT_ROLE || 'hr',
   roleHeader: process.env.ROLE_HEADER || 'x-role',
+  // Comma-separated list of allowed CORS origins. Empty = dev permissive mode.
+  allowedOrigins: process.env.ALLOWED_ORIGINS || '',
   encryptionKey:
     process.env.ENCRYPTION_KEY ||
     DEV_DEFAULT_ENCRYPTION_KEY,
@@ -50,6 +56,16 @@ if (
   console.warn(
     '[config] WARNING: ENCRYPTION_KEY is set to the default insecure development value. ' +
     'Set a strong, unique ENCRYPTION_KEY environment variable before deploying to production.'
+  );
+}
+
+// Warn when HR_API_KEY is not configured — the entire API is accessible without
+// authentication, which is a critical vulnerability in production deployments.
+if (!config.hrApiKey && process.env.NODE_ENV !== 'test') {
+  console.warn(
+    '[config] WARNING: HR_API_KEY is not set. ' +
+    'All API endpoints are accessible without authentication. ' +
+    'Set HR_API_KEY to a strong secret before deploying to production.'
   );
 }
 

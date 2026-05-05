@@ -23,13 +23,14 @@ const {
   listCandidates,
   getCandidate,
   listPositions,
+  listAllPositions,
+  addPosition,
+  deletePosition,
   getDashboard,
   toSheetRows,
   listAuditLogs,
   listEmailEvents,
   listRetryQueue,
-  listVerificationQueue,
-  listExtractionQueue,
   getTemplates,
   updateTemplate,
   acknowledgementTemplate,
@@ -38,6 +39,14 @@ const {
   importBackup,
   getIntegrationsStatus,
   syncGoogleSheets,
+  addCandidateNote,
+  getCandidateNotes,
+  bulkCandidateAction,
+  registerWebhook,
+  deleteWebhook,
+  listWebhooks,
+  sendDeadlineReminders,
+  startReminderScheduler,
   // New modules
   queueOutboundDispatch,
   sendOutboundDispatch,
@@ -53,8 +62,43 @@ const {
 } = require('./services');
 
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: '6mb' }));
+
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+// Restrict to configured origins in production; fall back to permissive in dev.
+const allowedOriginsRaw = config.allowedOrigins || '';
+const allowedOrigins = allowedOriginsRaw
+  ? allowedOriginsRaw.split(',').map((o) => o.trim()).filter(Boolean)
+  : [];
+
+app.use(cors(
+  allowedOrigins.length > 0
+    ? {
+        origin: (origin, callback) => {
+          // Allow same-origin / non-browser requests (no Origin header)
+          if (!origin || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+          }
+          return callback(new Error(`CORS: origin "${origin}" is not allowed`));
+        },
+        credentials: true
+      }
+    : undefined // permissive (dev/test)
+));
+
+// ─── Body size limits ─────────────────────────────────────────────────────────
+// Large bodies are only accepted on document-upload routes (item 18).
+const DEFAULT_JSON_LIMIT = '64kb';
+const UPLOAD_JSON_LIMIT = '6mb';
+
+app.use((req, res, next) => {
+  // Document content upload endpoints accept larger bodies.
+  const isUploadRoute =
+    req.path.includes('/documents/content') ||
+    req.path.includes('/documents/ingest') ||
+    req.path.includes('/email/inbound');
+  return express.json({ limit: isUploadRoute ? UPLOAD_JSON_LIMIT : DEFAULT_JSON_LIMIT })(req, res, next);
+});
+
 app.use(express.static('public'));
 
 function createRateLimiter({ windowMs, max }) {
@@ -220,7 +264,35 @@ app.get('/api/config/ack-template', (_req, res) => {
 });
 
 app.get('/api/positions', (_req, res) => {
-  res.json({ positions: listPositions() });
+  res.json({ positions: listAllPositions() });
+});
+
+const positionSchema = z.object({
+  name: z.string().min(2),
+  checklist: z.array(z.string().min(1)).min(1)
+});
+
+app.post('/api/positions', secureWrite('write:candidates'), (req, res) => {
+  const parsed = positionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const position = addPosition(parsed.data.name, parsed.data.checklist);
+    return res.status(201).json(position);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/positions/:name', secureWrite('write:candidates'), (req, res) => {
+  try {
+    deletePosition(decodeURIComponent(req.params.name));
+    return res.json({ deleted: true });
+  } catch (error) {
+    const status = error.message === 'Position not found' ? 404 : 400;
+    return res.status(status).json({ error: error.message });
+  }
 });
 
 app.get('/api/candidates', secure('read:candidates'), (req, res) => {
@@ -532,12 +604,59 @@ app.post('/api/email-events/:id/retry', secureWrite('write:candidates'), (req, r
   }
 });
 
-app.get('/api/audit-logs', secure('read:audit'), (_req, res) => {
-  res.json({ items: listAuditLogs() });
+// Audit-log endpoint with optional search/filter + pagination (items 19 & 29).
+app.get('/api/audit-logs', secure('read:audit'), (req, res) => {
+  let items = listAuditLogs();
+
+  // Filtering
+  if (req.query.action) {
+    items = items.filter((x) => x.action === req.query.action);
+  }
+  if (req.query.candidateId) {
+    items = items.filter((x) => x.candidateId === req.query.candidateId);
+  }
+  if (req.query.since) {
+    const since = new Date(req.query.since);
+    if (!isNaN(since)) {
+      items = items.filter((x) => new Date(x.timestamp) >= since);
+    }
+  }
+
+  const total = items.length;
+  const limitParam = parseInt(req.query.limit, 10);
+  if (limitParam > 0) {
+    const limit = Math.min(limitParam, 500);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const start = (page - 1) * limit;
+    return res.json({ items: items.slice(start, start + limit), total, page, limit, totalPages: Math.ceil(total / limit) });
+  }
+  return res.json({ items, total });
 });
 
-app.get('/api/email-events', secure('read:email'), (_req, res) => {
-  res.json({ items: listEmailEvents() });
+// Email-events endpoint with pagination to avoid O(n) decrypt on every call (items 19 & 29).
+app.get('/api/email-events', secure('read:email'), (req, res) => {
+  let items = listEmailEvents();
+
+  // Filtering
+  if (req.query.status) {
+    items = items.filter((x) => x.status === req.query.status);
+  }
+  if (req.query.candidateId) {
+    items = items.filter((x) => x.candidateId === req.query.candidateId);
+  }
+  if (req.query.direction) {
+    items = items.filter((x) => x.direction === req.query.direction);
+  }
+
+  const total = items.length;
+  const limitParam = parseInt(req.query.limit, 10);
+  if (limitParam > 0) {
+    const limit = Math.min(limitParam, 200);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const start = (page - 1) * limit;
+    return res.json({ items: items.slice(start, start + limit), total, page, limit, totalPages: Math.ceil(total / limit) });
+  }
+  return res.json({ items, total });
 });
 
 app.get('/api/backup', secureWrite('write:backup'), (_req, res) => {
@@ -708,6 +827,108 @@ app.patch('/api/candidates/:id/enrich', secureWrite('write:candidates'), (req, r
   }
 });
 
+// ─── Candidate notes ──────────────────────────────────────────────────────────
+
+const noteSchema = z.object({
+  author: z.string().min(1).optional(),
+  content: z.string().min(1)
+});
+
+app.post('/api/candidates/:id/notes', secureWrite('write:candidates'), (req, res) => {
+  const parsed = noteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const note = addCandidateNote(req.params.id, parsed.data);
+    return res.status(201).json(note);
+  } catch (error) {
+    const status = error.message === 'Candidate not found' ? 404 : 400;
+    return res.status(status).json({ error: error.message });
+  }
+});
+
+app.get('/api/candidates/:id/notes', secure('read:candidates'), (req, res) => {
+  try {
+    const notes = getCandidateNotes(req.params.id);
+    return res.json({ items: notes });
+  } catch (error) {
+    const status = error.message === 'Candidate not found' ? 404 : 400;
+    return res.status(status).json({ error: error.message });
+  }
+});
+
+// ─── Bulk candidate actions ───────────────────────────────────────────────────
+
+const bulkActionSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1),
+  action: z.enum(['shortlist', 'reject', 'followUp']),
+  reason: z.string().optional()
+});
+
+app.post('/api/candidates/bulk', secureWrite('write:candidates'), (req, res) => {
+  const parsed = bulkActionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const result = bulkCandidateAction(
+      parsed.data.ids,
+      parsed.data.action,
+      parsed.data.reason ? { reason: parsed.data.reason } : {}
+    );
+    return res.json(result);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+// ─── Webhook management ───────────────────────────────────────────────────────
+
+const webhookSchema = z.object({
+  url: z.string().url(),
+  events: z.array(z.string()).optional(),
+  secret: z.string().optional()
+});
+
+app.get('/api/webhooks', secure('read:dashboard'), (_req, res) => {
+  res.json({ items: listWebhooks() });
+});
+
+app.post('/api/webhooks', secureWrite('write:candidates'), (req, res) => {
+  const parsed = webhookSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const hook = registerWebhook(parsed.data);
+    return res.status(201).json(hook);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/webhooks/:id', secureWrite('write:candidates'), (req, res) => {
+  try {
+    deleteWebhook(req.params.id);
+    return res.json({ deleted: true });
+  } catch (error) {
+    const status = error.message === 'Webhook not found' ? 404 : 400;
+    return res.status(status).json({ error: error.message });
+  }
+});
+
+// ─── Reminder trigger ─────────────────────────────────────────────────────────
+
+app.post('/api/reminders/send', secureWrite('write:candidates'), (req, res) => {
+  try {
+    const result = sendDeadlineReminders();
+    return res.json(result);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
 function createServer() {
   return app;
 }
@@ -722,6 +943,8 @@ app.use((err, _req, res, _next) => {
 });
 
 if (require.main === module) {
+  // Start reminder scheduler when running as the main process.
+  startReminderScheduler();
   app.listen(config.port, () => {
     console.log(`Hiring automation API listening on http://localhost:${config.port}`);
   });
