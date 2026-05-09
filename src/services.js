@@ -1090,7 +1090,7 @@ function sanitizeWebhookForResponse(hook) {
 
 function exportBackup(actorContext = {}) {
   const snapshot = readStore();
-  const sanitizedWebhooks = Array.isArray((((snapshot || {}).settings || {}).webhooks))
+  const sanitizedWebhooks = Array.isArray(snapshot?.settings?.webhooks)
     ? snapshot.settings.webhooks.map(sanitizeWebhookForResponse)
     : [];
   const backup = {

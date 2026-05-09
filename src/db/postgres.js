@@ -63,6 +63,9 @@ function getPool() {
 
 function readIfExists(filePath) {
   if (!filePath) return undefined;
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`SSL certificate file not found at ${filePath}`);
+  }
   return fs.readFileSync(filePath, 'utf8');
 }
 
