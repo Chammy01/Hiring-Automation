@@ -1078,6 +1078,9 @@ function getAnalytics() {
 }
 
 function sanitizeWebhookForResponse(hook) {
+  if (!hook || typeof hook !== 'object') {
+    return null;
+  }
   return {
     id: hook.id,
     url: hook.url,
@@ -1583,7 +1586,12 @@ function registerWebhook({ url, events, secret }) {
   if (!url || typeof url !== 'string') {
     throw new Error('A valid webhook URL is required');
   }
-  const parsed = new URL(url);
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (_error) {
+    throw new Error('Invalid webhook URL format');
+  }
   if (parsed.protocol !== 'https:') {
     throw new Error('Webhook URL must use https://');
   }
@@ -1649,7 +1657,9 @@ function deleteWebhook(hookId) {
 
 function listWebhooks() {
   const state = readStore();
-  return Array.isArray(state.settings.webhooks) ? state.settings.webhooks.map(sanitizeWebhookForResponse) : [];
+  return Array.isArray(state.settings.webhooks)
+    ? state.settings.webhooks.map(sanitizeWebhookForResponse).filter(Boolean)
+    : [];
 }
 
 /**
@@ -1673,6 +1683,7 @@ function emitWebhook(event, data) {
   const body = JSON.stringify({ event, data, timestamp: nowIso() });
 
   for (const hook of hooks) {
+    // Backward compatibility: legacy records may still have plaintext `secret`.
     const rawSecret = hook.secretEncrypted ? decryptText(hook.secretEncrypted) : (hook.secret || '');
     const sig = rawSecret
       ? createHmac('sha256', rawSecret).update(body).digest('hex')

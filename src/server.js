@@ -693,11 +693,11 @@ app.get('/api/email-events', secure('read:email'), (req, res) => {
   return res.json({ items, total });
 });
 
-app.get('/api/backup', secure('admin:backup'), (req, res) => {
+app.get('/api/backup', secure('write:backup'), (req, res) => {
   res.json(exportBackup({ actor: req.auth && req.auth.actor, role: req.auth && req.auth.role }));
 });
 
-app.post('/api/restore', secureWrite('admin:backup'), (req, res) => {
+app.post('/api/restore', secureWrite('write:backup'), (req, res) => {
   try {
     const restored = importBackup(req.body || {}, { actor: req.auth && req.auth.actor, role: req.auth && req.auth.role });
     return res.json({ restored });
