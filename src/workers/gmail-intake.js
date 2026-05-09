@@ -45,6 +45,23 @@ const WATCH_MODE = process.argv.includes('--watch');
 // Processed message IDs stored locally to avoid reprocessing
 const PROCESSED_IDS_PATH = process.env.GMAIL_PROCESSED_IDS_PATH || 'data/gmail-processed-ids.json';
 
+function isLocalHost(hostname) {
+  const h = String(hostname || '').toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+}
+
+function validateApiBaseUrl(rawBaseUrl) {
+  const parsed = new URL(rawBaseUrl);
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('API_BASE_URL must use http:// or https://');
+  }
+  if (parsed.protocol !== 'https:' && !isLocalHost(parsed.hostname)) {
+    throw new Error('API_BASE_URL must use https:// for non-local hosts');
+  }
+}
+
+validateApiBaseUrl(API_BASE_URL);
+
 // ─── OAuth helpers ────────────────────────────────────────────────────────────
 
 const SCOPES = ['https://www.googleapis.com/auth/gmail.modify'];
@@ -252,8 +269,7 @@ function apiRequest(method, urlPath, body) {
 
     const bodyStr = body ? JSON.stringify(body) : '';
     const headers = {
-      'Content-Type': 'application/json',
-      'x-role': 'hr'
+      'Content-Type': 'application/json'
     };
     if (API_KEY) headers['x-api-key'] = API_KEY;
     if (bodyStr) headers['Content-Length'] = Buffer.byteLength(bodyStr);
@@ -413,7 +429,7 @@ async function processEmail(gmail, message, processedIds) {
     }
 
     // Do NOT log text content — log only metadata
-    files.push({ fileName, mimeType, text });
+    files.push({ fileName, mimeType, text, sizeBytes: buffer ? buffer.length : 0 });
   }
 
   // Submit to API

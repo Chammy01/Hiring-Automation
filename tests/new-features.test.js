@@ -17,13 +17,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const { app } = require('../src/server');
+const { config } = require('../src/config');
 const { resetStore } = require('./helpers');
 
 function hr(req) {
-  return req.set('x-role', 'hr');
+  return req.set('x-api-key', 'test-hr-key');
 }
 
-test.beforeEach(() => resetStore());
+function admin(req) {
+  return req.set('x-api-key', 'test-admin-key');
+}
+
+test.beforeEach(() => {
+  resetStore();
+  config.hrApiKeys = new Map([
+    ['test-hr-key', 'hr'],
+    ['test-admin-key', 'admin']
+  ]);
+});
 test.after(() => resetStore());
 
 // ─── Helper: create a candidate via API ──────────────────────────────────────
@@ -226,13 +237,13 @@ test('bulk action rejects unsupported actions', async () => {
 // ─── Webhook management ───────────────────────────────────────────────────────
 
 test('webhooks GET returns empty list initially', async () => {
-  const res = await hr(request(app).get('/api/webhooks'));
+  const res = await admin(request(app).get('/api/webhooks'));
   assert.equal(res.status, 200);
   assert.deepEqual(res.body.items, []);
 });
 
 test('webhooks POST registers a webhook', async () => {
-  const res = await hr(request(app).post('/api/webhooks')).send({
+  const res = await admin(request(app).post('/api/webhooks')).send({
     url: 'https://example.com/hook',
     events: ['candidate.created', 'candidate.hired'],
     secret: 'my-secret'
@@ -245,29 +256,29 @@ test('webhooks POST registers a webhook', async () => {
 });
 
 test('webhooks POST rejects invalid URL', async () => {
-  const res = await hr(request(app).post('/api/webhooks')).send({
+  const res = await admin(request(app).post('/api/webhooks')).send({
     url: 'not-a-url'
   });
   assert.equal(res.status, 400);
 });
 
 test('webhooks DELETE removes a registered webhook', async () => {
-  const created = await hr(request(app).post('/api/webhooks')).send({
+  const created = await admin(request(app).post('/api/webhooks')).send({
     url: 'https://example.com/removable'
   });
   assert.equal(created.status, 201);
   const hookId = created.body.id;
 
-  const del = await hr(request(app).delete(`/api/webhooks/${hookId}`));
+  const del = await admin(request(app).delete(`/api/webhooks/${hookId}`));
   assert.equal(del.status, 200);
   assert.equal(del.body.deleted, true);
 
-  const list = await hr(request(app).get('/api/webhooks'));
+  const list = await admin(request(app).get('/api/webhooks'));
   assert.ok(!list.body.items.some((h) => h.id === hookId));
 });
 
 test('webhooks DELETE returns 404 for unknown webhook', async () => {
-  const res = await hr(request(app).delete('/api/webhooks/nonexistent-id'));
+  const res = await admin(request(app).delete('/api/webhooks/nonexistent-id'));
   assert.equal(res.status, 404);
 });
 
@@ -326,12 +337,12 @@ test('email-events supports direction filter', async () => {
 // ─── importBackup validation ──────────────────────────────────────────────────
 
 test('importBackup rejects non-object payload', async () => {
-  const res = await hr(request(app).post('/api/restore')).send(['not', 'an', 'object']);
+  const res = await admin(request(app).post('/api/restore')).send(['not', 'an', 'object']);
   assert.equal(res.status, 400);
 });
 
 test('importBackup rejects candidate with missing id', async () => {
-  const res = await hr(request(app).post('/api/restore')).send({
+  const res = await admin(request(app).post('/api/restore')).send({
     candidates: [
       { fullName: 'No ID', email: 'noid@example.com' }
     ]
@@ -340,7 +351,7 @@ test('importBackup rejects candidate with missing id', async () => {
 });
 
 test('importBackup rejects candidate with missing email', async () => {
-  const res = await hr(request(app).post('/api/restore')).send({
+  const res = await admin(request(app).post('/api/restore')).send({
     candidates: [
       { id: 'abc-123', fullName: 'No Email' }
     ]
@@ -349,7 +360,7 @@ test('importBackup rejects candidate with missing email', async () => {
 });
 
 test('importBackup accepts valid backup payload', async () => {
-  const res = await hr(request(app).post('/api/restore')).send({
+  const res = await admin(request(app).post('/api/restore')).send({
     candidates: [
       {
         id: 'abc-123',
@@ -397,4 +408,19 @@ test('reminders send endpoint is reachable and returns result', async () => {
   assert.equal(res.status, 200);
   // Returns { sent: N } or { sent: 0, reason: '...' }
   assert.ok(typeof res.body.sent === 'number' || typeof res.body.reason === 'string');
+});
+
+test('webhook responses never expose secret material', async () => {
+  const created = await admin(request(app).post('/api/webhooks')).send({
+    url: 'https://example.com/secure-hook',
+    secret: 'super-secret'
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.hasSecret, true);
+  assert.equal(created.body.secret, undefined);
+  assert.equal(created.body.secretEncrypted, undefined);
+
+  const list = await admin(request(app).get('/api/webhooks'));
+  assert.equal(list.status, 200);
+  assert.ok(list.body.items.every((h) => h.secret === undefined && h.secretEncrypted === undefined));
 });

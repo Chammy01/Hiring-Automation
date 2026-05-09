@@ -76,8 +76,7 @@ const ROLE_PERMISSIONS = {
     'write:candidates',
     'write:templates',
     'read:audit',
-    'read:email',
-    'write:backup'
+    'read:email'
   ],
   admin: ['*']
 };

@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS outbound_dispatches (
   to_email        TEXT        NOT NULL,
   from_email      TEXT        NOT NULL,
   subject         TEXT        NOT NULL,
-  body            TEXT        NOT NULL,
+  body_encrypted  TEXT        NOT NULL,
   template_key    TEXT,
   template_vars   JSONB       NOT NULL DEFAULT '{}',
   status          TEXT        NOT NULL DEFAULT 'queued',  -- queued | sending | sent | failed
