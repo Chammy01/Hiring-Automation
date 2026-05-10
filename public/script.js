@@ -54,17 +54,29 @@ function formatDate(iso) {
 }
 
 // ── API ────────────────────────────────────────────────────────
+let csrfToken = '';
+let currentUser = null;
+
 async function api(path, options = {}) {
   const apiKey = window.localStorage.getItem('HR_API_KEY') || '';
+  const method = String(options.method || 'GET').toUpperCase();
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
   if (apiKey) headers['x-api-key'] = apiKey;
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
+    headers['x-csrf-token'] = csrfToken;
+  }
   const res = await fetch(path, {
     ...options,
-    headers
+    headers,
+    credentials: 'include'
   });
+  if (res.status === 401 && !path.startsWith('/api/auth/')) {
+    window.location.href = '/login';
+    throw new Error('Session expired');
+  }
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
     throw new Error(payload.error || `Request failed (${res.status})`);
@@ -1487,85 +1499,20 @@ document.getElementById('settings-reset').addEventListener('click', () => {
   }
 });
 
-/* ═══════════════════════════════════════════════════════════════
-   API KEY SETUP MODAL
-   Add this before the init() function in public/script.js
-   ═══════════════════════════════════════════════════════════════ */
-
-// ── API KEY MODAL ───────────────────────────────────────────────
-function showApiKeyModal() {
-  const modal = document.createElement('div');
-  modal.id = 'api-key-modal';
-  modal.className = 'modal-overlay is-open';
-  modal.setAttribute('role', 'dialog');
-  modal.setAttribute('aria-modal', 'true');
-  modal.setAttribute('aria-labelledby', 'api-key-modal-title');
-  modal.setAttribute('aria-hidden', 'false');
-  
-  modal.innerHTML = `
-    <div class="modal-panel modal-sm" role="document">
-      <div class="modal-header">
-        <h2 class="modal-title" id="api-key-modal-title">API Key Required</h2>
-      </div>
-      <div class="modal-body">
-        <p style="color:var(--text-secondary);margin-bottom:1rem">
-          Enter your HR API key to access the dashboard. This will be stored in your browser's local storage.
-        </p>
-        <div class="form-field">
-          <label for="api-key-input">API Key</label>
-          <input 
-            id="api-key-input" 
-            type="password" 
-            placeholder="Enter your API key…" 
-            style="width:100%;padding:0.75rem;border:1px solid var(--glass-border);border-radius:6px;background:var(--glass-bg);color:var(--text-primary);font-family:monospace;font-size:13px"
-          />
-        </div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:0.75rem">
-          Get your API key from the <strong>Settings</strong> page after logging in, or from your HR team lead.
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn" id="api-key-submit" style="width:100%">Continue</button>
-      </div>
-    </div>
-  `;
-  
-  document.body.appendChild(modal);
-  document.body.style.overflow = 'hidden';
-  
-  const input = document.getElementById('api-key-input');
-  const submitBtn = document.getElementById('api-key-submit');
-  
-  function closeModal() {
-    modal.remove();
-    document.body.style.overflow = '';
+async function ensureAuthenticated() {
+  const data = await api('/api/auth/verify');
+  csrfToken = data.csrfToken || '';
+  currentUser = data.user || null;
+  const userLabel = document.getElementById('current-user-label');
+  if (userLabel && currentUser) {
+    userLabel.textContent = `${currentUser.username} (${currentUser.role})`;
   }
-  
-  submitBtn.addEventListener('click', () => {
-    const key = input.value.trim();
-    if (!key) {
-      toast('Please enter an API key', 'warn');
-      return;
-    }
-    localStorage.setItem('HR_API_KEY', key);
-    closeModal();
-    location.reload();
-  });
-  
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') submitBtn.click();
-  });
-  
-  requestAnimationFrame(() => input.focus());
-}
-
-// Check for API key on page load
-if (!window.localStorage.getItem('HR_API_KEY')) {
-  showApiKeyModal();
 }
 
 // ── INIT ──────────────────────────────────────────────────────
 async function init() {
+  await ensureAuthenticated();
+
   // Populate status dropdown from WORKFLOW_STATES constant
   const statusSelect = document.getElementById('filter-status');
   WORKFLOW_STATES.forEach((state) => {
@@ -1590,6 +1537,17 @@ async function init() {
   if (candidateId) {
     openCandidateModal(candidateId);
   }
+}
+
+const logoutBtn = document.getElementById('logout-btn');
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', async () => {
+    try {
+      await api('/api/auth/logout', { method: 'POST' });
+    } finally {
+      window.location.href = '/login';
+    }
+  });
 }
 
 init();

@@ -160,6 +160,17 @@ body {
   width: var(--sidebar-collapsed-width);
 }
 
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 /* Brand */
 .sidebar-brand {
   display: flex;

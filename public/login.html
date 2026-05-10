@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HireFlow Login</title>
+    <link rel="stylesheet" href="/auth.css" />
+  </head>
+  <body>
+    <main class="auth-card">
+      <h1 class="auth-title">Welcome back</h1>
+      <p class="auth-subtitle">Sign in to access the Hiring Automation dashboard.</p>
+      <form id="login-form">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required />
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+        <p id="error-msg" class="error-msg"></p>
+        <button type="submit">Sign in</button>
+      </form>
+      <p class="auth-subtitle" style="margin-top:12px">
+        Need to create HR users? Use <strong>/dev/register?key=YOUR_DEVELOPER_KEY</strong>
+      </p>
+    </main>
+    <script src="/login.js"></script>
+  </body>
+</html>

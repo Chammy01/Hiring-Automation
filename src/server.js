@@ -1,8 +1,21 @@
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const path = require('node:path');
 const { z } = require('zod');
 const { config } = require('./config');
 const { requirePermission } = require('./security');
+const {
+  issueJwtToken,
+  verifyJwtToken,
+  registerUser,
+  listUsers,
+  deleteUser,
+  changeUserPassword,
+  authenticateUser,
+  recordAuthEvent,
+  createCsrfToken
+} = require('./auth');
 const {
   createCandidateFromApplication,
   submitCandidateDocuments,
@@ -117,7 +130,8 @@ app.use((req, res, next) => {
   return express.json({ limit: isUploadRoute ? UPLOAD_JSON_LIMIT : DEFAULT_JSON_LIMIT })(req, res, next);
 });
 
-app.use(express.static('public'));
+app.use(cookieParser());
+app.use(express.static('public', { index: false }));
 
 function createRateLimiter({ windowMs, max }) {
   const buckets = new Map();
@@ -145,7 +159,90 @@ function createRateLimiter({ windowMs, max }) {
   };
 }
 
+function buildAuthCookieOptions() {
+  const shouldSecure = config.cookieSecure && !config.runtime.isTest && !config.runtime.isLocalDev;
+  return {
+    httpOnly: true,
+    secure: shouldSecure,
+    sameSite: 'strict',
+    maxAge: 24 * 60 * 60 * 1000,
+    path: '/'
+  };
+}
+
+function setAuthCookies(res, token, csrfToken) {
+  res.cookie('auth_token', token, buildAuthCookieOptions());
+  res.cookie('csrf_token', csrfToken, {
+    secure: buildAuthCookieOptions().secure,
+    sameSite: 'strict',
+    maxAge: 24 * 60 * 60 * 1000,
+    path: '/'
+  });
+}
+
+function clearAuthCookies(res) {
+  const cookieOpts = {
+    secure: buildAuthCookieOptions().secure,
+    sameSite: 'strict',
+    path: '/'
+  };
+  res.clearCookie('auth_token', { ...cookieOpts, httpOnly: true });
+  res.clearCookie('csrf_token', cookieOpts);
+}
+
+function resolveJwtAuth(req) {
+  const token = req.cookies && req.cookies.auth_token;
+  if (!token) return null;
+  try {
+    const payload = verifyJwtToken(token);
+    return {
+      role: String(payload.role || 'viewer').toLowerCase(),
+      actor: `user:${payload.sub}`,
+      username: String(payload.sub || ''),
+      method: 'jwt'
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function requireCsrfForJwt(req, res, next) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+  if (!req.auth || req.auth.method !== 'jwt') {
+    return next();
+  }
+  const cookieToken = req.cookies && req.cookies.csrf_token;
+  const headerToken = String(req.headers['x-csrf-token'] || '');
+  if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+    return res.status(403).json({ error: 'Invalid CSRF token' });
+  }
+  return next();
+}
+
+const loginFailures = new Map();
+const MAX_LOGIN_FAILURES = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+function getIpLoginBucket(ip) {
+  const now = Date.now();
+  const bucket = loginFailures.get(ip);
+  if (!bucket || now - bucket.start > LOGIN_WINDOW_MS) {
+    const fresh = { start: now, failed: 0 };
+    loginFailures.set(ip, fresh);
+    return fresh;
+  }
+  return bucket;
+}
+
 function requireApiKey(req, res, next) {
+  const jwtAuth = resolveJwtAuth(req);
+  if (jwtAuth) {
+    req.auth = jwtAuth;
+    return next();
+  }
+
   const provided = String(req.headers['x-api-key'] || '').trim();
   const role = config.hrApiKeys.get(provided);
 
@@ -171,13 +268,13 @@ function requireApiKey(req, res, next) {
 }
 
 function secure(permission) {
-  return [requireApiKey, requirePermission(permission)];
+  return [requireApiKey, requireCsrfForJwt, requirePermission(permission)];
 }
 
 const sensitiveActionLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
 
 function secureWrite(permission) {
-  return [sensitiveActionLimiter, requireApiKey, requirePermission(permission)];
+  return [sensitiveActionLimiter, requireApiKey, requireCsrfForJwt, requirePermission(permission)];
 }
 
 const intakeSchema = z.object({
@@ -290,6 +387,148 @@ const appSettingsSchema = z.object({
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'hiring-automation' });
+});
+
+const loginSchema = z.object({
+  username: z.string().min(3),
+  password: z.string().min(1)
+});
+
+const registerSchema = z.object({
+  username: z.string().min(3),
+  password: z.string().min(12),
+  role: z.enum(['admin', 'hr', 'developer'])
+});
+
+const changePasswordSchema = z.object({
+  password: z.string().min(12)
+});
+
+function requireDeveloperKey(req, res, next) {
+  if (!config.developerKey) {
+    return res.status(503).json({ error: 'Developer registration is not configured' });
+  }
+  const provided = String(req.headers['x-developer-key'] || req.query.key || '').trim();
+  if (provided !== config.developerKey) {
+    recordAuthEvent('auth.developer_key.denied', { ip: req.ip, path: req.path });
+    return res.status(403).json({ error: 'Invalid developer key' });
+  }
+  return next();
+}
+
+app.get('/', (req, res) => {
+  if (resolveJwtAuth(req)) {
+    return res.sendFile(path.resolve('public/index.html'));
+  }
+  return res.redirect('/login');
+});
+
+app.get('/login', (_req, res) => {
+  res.sendFile(path.resolve('public/login.html'));
+});
+
+app.get('/dev/register', requireDeveloperKey, (_req, res) => {
+  res.sendFile(path.resolve('public/dev-register.html'));
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const parsed = loginSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const ip = req.ip || 'unknown';
+  const bucket = getIpLoginBucket(ip);
+  if (bucket.failed >= MAX_LOGIN_FAILURES) {
+    return res.status(429).json({ error: 'Too many failed login attempts. Try again later.' });
+  }
+
+  const user = authenticateUser(parsed.data.username, parsed.data.password);
+  if (!user) {
+    bucket.failed += 1;
+    recordAuthEvent('auth.login.failed', { ip, username: parsed.data.username });
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+
+  bucket.failed = 0;
+  bucket.start = Date.now();
+  const token = issueJwtToken(user);
+  const csrfToken = createCsrfToken();
+  setAuthCookies(res, token, csrfToken);
+  recordAuthEvent('auth.login.success', { ip, username: user.username, role: user.role });
+  return res.json({ user, csrfToken });
+});
+
+app.post('/api/auth/logout', requireApiKey, requireCsrfForJwt, (req, res) => {
+  clearAuthCookies(res);
+  recordAuthEvent('auth.logout', { actor: req.auth && req.auth.actor, ip: req.ip });
+  return res.json({ success: true });
+});
+
+app.get('/api/auth/verify', (req, res) => {
+  const auth = resolveJwtAuth(req);
+  if (!auth) {
+    clearAuthCookies(res);
+    return res.status(401).json({ valid: false });
+  }
+  const csrfToken = req.cookies && req.cookies.csrf_token ? req.cookies.csrf_token : createCsrfToken();
+  if (!(req.cookies && req.cookies.csrf_token)) {
+    res.cookie('csrf_token', csrfToken, {
+      secure: buildAuthCookieOptions().secure,
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000,
+      path: '/'
+    });
+  }
+  return res.json({
+    valid: true,
+    user: { username: auth.username, role: auth.role },
+    csrfToken
+  });
+});
+
+app.post('/api/auth/register', requireDeveloperKey, (req, res) => {
+  const parsed = registerSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const user = registerUser(parsed.data, {
+      actor: req.auth && req.auth.actor ? req.auth.actor : 'developer-key',
+      ip: req.ip
+    });
+    return res.status(201).json({ user });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/auth/users', requireDeveloperKey, (_req, res) => {
+  return res.json({ items: listUsers() });
+});
+
+app.delete('/api/auth/users/:username', requireDeveloperKey, (req, res) => {
+  try {
+    const user = deleteUser(req.params.username, { ip: req.ip });
+    return res.json({ deleted: true, user });
+  } catch (error) {
+    const status = error.message === 'User not found' ? 404 : 400;
+    return res.status(status).json({ error: error.message });
+  }
+});
+
+app.put('/api/auth/users/:username/password', requireDeveloperKey, (req, res) => {
+  const parsed = changePasswordSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  try {
+    const user = changeUserPassword(req.params.username, parsed.data.password, { ip: req.ip });
+    return res.json({ updated: true, user });
+  } catch (error) {
+    const status = error.message === 'User not found' ? 404 : 400;
+    return res.status(status).json({ error: error.message });
+  }
 });
 
 app.get('/api/config/ack-template', (_req, res) => {
@@ -969,6 +1208,10 @@ function createServer() {
   return app;
 }
 
+function resetAuthRuntimeState() {
+  loginFailures.clear();
+}
+
 // Global error handler — must be the last middleware registered.
 // Catches errors thrown/passed from async route handlers.
 // eslint-disable-next-line no-unused-vars
@@ -989,5 +1232,6 @@ if (require.main === module) {
 
 module.exports = {
   app,
-  createServer
+  createServer,
+  resetAuthRuntimeState
 };

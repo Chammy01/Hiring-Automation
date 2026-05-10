@@ -43,6 +43,9 @@ const config = {
   webhookAllowedDomains: parseCsv(process.env.WEBHOOK_ALLOWED_DOMAINS || '').map((d) => d.toLowerCase()),
   webhookTimeoutMs: Number(process.env.WEBHOOK_TIMEOUT_MS || 5000),
   localAuthRole: String(process.env.LOCAL_AUTH_ROLE || 'hr').toLowerCase(),
+  jwtSecret: process.env.JWT_SECRET || process.env.ENCRYPTION_KEY || DEV_DEFAULT_ENCRYPTION_KEY,
+  developerKey: String(process.env.DEVELOPER_KEY || '').trim(),
+  cookieSecure: String(process.env.COOKIE_SECURE || '').toLowerCase() !== 'false',
   mailboxAddress: process.env.MAILBOX_ADDRESS || 'applications@company.local',
   googleSheetsEnabled: String(process.env.GOOGLE_SHEETS_ENABLED || '').toLowerCase() === 'true',
   googleSheetsCredentialsJson: process.env.GOOGLE_SHEETS_CREDENTIALS_JSON || '',
@@ -120,6 +123,10 @@ if (config.encryptionKey === DEV_DEFAULT_ENCRYPTION_KEY && !isTest) {
     '[config] WARNING: ENCRYPTION_KEY is using the local development fallback. ' +
     'Set a strong ENCRYPTION_KEY before deploying.'
   );
+}
+
+if (!isTest && !isLocalDev && !process.env.JWT_SECRET) {
+  console.warn('[config] WARNING: JWT_SECRET is not set; using fallback key. Set JWT_SECRET for production.');
 }
 
 if (isProduction && config.allowedOriginsList.length === 0) {
