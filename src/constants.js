@@ -78,6 +78,7 @@ const ROLE_PERMISSIONS = {
     'read:audit',
     'read:email'
   ],
+  developer: ['*'],
   admin: ['*']
 };
 

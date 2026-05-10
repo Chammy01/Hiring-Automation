@@ -258,6 +258,18 @@ curl -X POST http://localhost:3000/api/applications/intake \
     "email":"jane@example.com",
     "position":"Administrative Aide IV (Clerk II)"
   }'
+
+## Authentication (JWT + Cookies)
+
+- Public login page: `GET /login`
+- Auth endpoints:
+  - `POST /api/auth/login`
+  - `POST /api/auth/logout`
+  - `GET /api/auth/verify`
+  - `POST /api/auth/register` (requires `x-developer-key`)
+- JWT session token is stored in an `httpOnly` cookie (`auth_token`) with 24h expiry.
+- Mutating requests authenticated by JWT must include `x-csrf-token`.
+- Developer user-management page: `GET /dev/register?key=<DEVELOPER_KEY>`.
 ```
 
 ### 10) Reset local data (fresh start)

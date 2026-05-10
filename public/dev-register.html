@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Developer User Management</title>
+    <link rel="stylesheet" href="/auth.css" />
+  </head>
+  <body>
+    <main class="auth-card">
+      <h1 class="auth-title">Developer User Management</h1>
+      <p class="auth-subtitle">Create and maintain HR user accounts.</p>
+
+      <form id="create-user-form">
+        <div class="row">
+          <div>
+            <label for="new-username">Username</label>
+            <input id="new-username" required />
+          </div>
+          <div>
+            <label for="new-role">Role</label>
+            <select id="new-role">
+              <option value="hr">hr</option>
+              <option value="admin">admin</option>
+              <option value="developer">developer</option>
+            </select>
+          </div>
+        </div>
+        <label for="new-password">Password</label>
+        <input id="new-password" type="password" required />
+        <p class="auth-subtitle" style="margin:-4px 0 10px">Minimum 12 chars with uppercase, lowercase, number, and symbol.</p>
+        <p id="create-error" class="error-msg"></p>
+        <button type="submit">Create user</button>
+      </form>
+
+      <div style="margin-top:14px">
+        <button id="refresh-users" class="ghost-btn" type="button">Refresh users</button>
+      </div>
+      <ul id="users-list" class="list"></ul>
+    </main>
+    <script src="/dev-register.js"></script>
+  </body>
+</html>

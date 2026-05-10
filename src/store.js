@@ -28,6 +28,7 @@ function makeDefaultAppSettings() {
 }
 
 const initialState = {
+  users: [],
   candidates: [],
   emailEvents: [],
   auditLogs: [],
@@ -58,6 +59,7 @@ function normalizeState(state = {}) {
   const storedAppSettings = (state.settings && state.settings.appSettings) || {};
   const defaults = makeDefaultAppSettings();
   return {
+    users: Array.isArray(state.users) ? state.users : [],
     candidates: Array.isArray(state.candidates) ? state.candidates : [],
     emailEvents: Array.isArray(state.emailEvents) ? state.emailEvents : [],
     auditLogs: Array.isArray(state.auditLogs) ? state.auditLogs : [],
