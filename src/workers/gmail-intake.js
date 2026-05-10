@@ -420,16 +420,19 @@ async function processEmail(gmail, message, processedIds) {
     }
 
     const classification = classifyDocument(fileName, text);
+    const sizeBytes = buffer
+      ? buffer.length
+      : Buffer.byteLength(String(text || ''), 'utf8');
     if (classification) {
       console.log(
         `[gmail-intake]   "${fileName}" → "${classification.docName}" (score=${classification.score}, matchedBy=${classification.matchedBy})`
       );
     } else {
-      console.log(`[gmail-intake]   "${fileName}" → unclassified (size=${buffer ? buffer.length : 0} bytes)`);
+      console.log(`[gmail-intake]   "${fileName}" → unclassified (size=${sizeBytes} bytes)`);
     }
 
     // Do NOT log text content — log only metadata
-    files.push({ fileName, mimeType, text, sizeBytes: buffer ? buffer.length : 0 });
+    files.push({ fileName, mimeType, text, sizeBytes });
   }
 
   // Submit to API

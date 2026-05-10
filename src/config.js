@@ -88,7 +88,8 @@ if (config.hrApiKey && config.hrApiKeys.size === 0) {
 
 if (!isTest && !config.hrApiKeys.size) {
   throw new Error(
-    '[config] HR_API_KEY (or HR_API_KEYS) is required outside test environments.'
+    '[config] HR_API_KEY (or HR_API_KEYS) is required outside test environments. ' +
+    'Set it in environment variables (see .env.example).'
   );
 }
 

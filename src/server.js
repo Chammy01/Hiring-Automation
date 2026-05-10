@@ -976,7 +976,7 @@ app.use((err, _req, res, _next) => {
   console.error('[server] Unhandled error:', err && err.stack ? err.stack : (err.message || err));
   const status = err.status || err.statusCode || 500;
   const isClientError = status >= 400 && status < 500;
-  res.status(status).json({ error: isClientError ? 'Request failed' : 'Internal server error' });
+  res.status(status).json({ error: isClientError ? (err.message || 'Request failed') : 'Internal server error' });
 });
 
 if (require.main === module) {
