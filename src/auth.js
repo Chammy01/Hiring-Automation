@@ -25,11 +25,11 @@ function verifyJwtToken(token) {
 }
 
 function hashPassword(password) {
-  return bcrypt.hashSync(password, 12);
+  return bcrypt.hash(String(password), 12);
 }
 
 function verifyPassword(password, hash) {
-  return bcrypt.compareSync(password, hash);
+  return bcrypt.compare(String(password), hash);
 }
 
 function sanitizeUser(user) {
@@ -73,10 +73,11 @@ function logAuthEvent(state, action, metadata = {}) {
   });
 }
 
-function registerUser({ username, password, role }, metadata = {}) {
+async function registerUser({ username, password, role }, metadata = {}) {
   const normalizedUsername = validateUsername(username);
   const normalizedRole = validateRole(role);
   validatePasswordStrength(password);
+  const passwordHash = await hashPassword(password);
   let created;
   updateStore((state) => {
     if (state.users.some((user) => user.username === normalizedUsername)) {
@@ -86,7 +87,7 @@ function registerUser({ username, password, role }, metadata = {}) {
     created = {
       username: normalizedUsername,
       role: normalizedRole,
-      passwordHash: hashPassword(password),
+      passwordHash,
       createdAt: now,
       updatedAt: now
     };
@@ -117,16 +118,17 @@ function deleteUser(username, metadata = {}) {
   return sanitizeUser(removed);
 }
 
-function changeUserPassword(username, password, metadata = {}) {
+async function changeUserPassword(username, password, metadata = {}) {
   const normalizedUsername = validateUsername(username);
   validatePasswordStrength(password);
+  const nextHash = await hashPassword(password);
   let updated = null;
   updateStore((state) => {
     const user = state.users.find((item) => item.username === normalizedUsername);
     if (!user) {
       throw new Error('User not found');
     }
-    user.passwordHash = hashPassword(password);
+    user.passwordHash = nextHash;
     user.updatedAt = nowIso();
     updated = user;
     logAuthEvent(state, 'auth.user.password_changed', { username: normalizedUsername, ...metadata });
@@ -135,12 +137,13 @@ function changeUserPassword(username, password, metadata = {}) {
   return sanitizeUser(updated);
 }
 
-function authenticateUser(username, password) {
+async function authenticateUser(username, password) {
   const normalizedUsername = validateUsername(username);
   const state = readStore();
   const user = state.users.find((item) => item.username === normalizedUsername);
   if (!user) return null;
-  if (!verifyPassword(password, user.passwordHash)) return null;
+  const matches = await verifyPassword(password, user.passwordHash);
+  if (!matches) return null;
   return sanitizeUser(user);
 }
 

@@ -225,6 +225,15 @@ const loginFailures = new Map();
 const MAX_LOGIN_FAILURES = 5;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, bucket] of loginFailures.entries()) {
+    if (now - bucket.start > LOGIN_WINDOW_MS) {
+      loginFailures.delete(ip);
+    }
+  }
+}, LOGIN_WINDOW_MS).unref();
+
 function getIpLoginBucket(ip) {
   const now = Date.now();
   const bucket = loginFailures.get(ip);
@@ -431,7 +440,7 @@ app.get('/dev/register', requireDeveloperKey, (_req, res) => {
   res.sendFile(path.resolve('public/dev-register.html'));
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const parsed = loginSchema.safeParse(req.body || {});
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -443,7 +452,7 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(429).json({ error: 'Too many failed login attempts. Try again later.' });
   }
 
-  const user = authenticateUser(parsed.data.username, parsed.data.password);
+  const user = await authenticateUser(parsed.data.username, parsed.data.password);
   if (!user) {
     bucket.failed += 1;
     recordAuthEvent('auth.login.failed', { ip, username: parsed.data.username });
@@ -487,13 +496,13 @@ app.get('/api/auth/verify', (req, res) => {
   });
 });
 
-app.post('/api/auth/register', requireDeveloperKey, (req, res) => {
+app.post('/api/auth/register', requireDeveloperKey, async (req, res) => {
   const parsed = registerSchema.safeParse(req.body || {});
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const user = registerUser(parsed.data, {
+    const user = await registerUser(parsed.data, {
       actor: req.auth && req.auth.actor ? req.auth.actor : 'developer-key',
       ip: req.ip
     });
@@ -517,13 +526,13 @@ app.delete('/api/auth/users/:username', requireDeveloperKey, (req, res) => {
   }
 });
 
-app.put('/api/auth/users/:username/password', requireDeveloperKey, (req, res) => {
+app.put('/api/auth/users/:username/password', requireDeveloperKey, async (req, res) => {
   const parsed = changePasswordSchema.safeParse(req.body || {});
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const user = changeUserPassword(req.params.username, parsed.data.password, { ip: req.ip });
+    const user = await changeUserPassword(req.params.username, parsed.data.password, { ip: req.ip });
     return res.json({ updated: true, user });
   } catch (error) {
     const status = error.message === 'User not found' ? 404 : 400;

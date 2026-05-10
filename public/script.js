@@ -56,6 +56,7 @@ function formatDate(iso) {
 // ── API ────────────────────────────────────────────────────────
 let csrfToken = '';
 let currentUser = null;
+let redirectingForSessionExpiry = false;
 
 async function api(path, options = {}) {
   const apiKey = window.localStorage.getItem('HR_API_KEY') || '';
@@ -74,7 +75,13 @@ async function api(path, options = {}) {
     credentials: 'include'
   });
   if (res.status === 401 && !path.startsWith('/api/auth/')) {
-    window.location.href = '/login';
+    if (!redirectingForSessionExpiry) {
+      redirectingForSessionExpiry = true;
+      toast('Session expired. Redirecting to login…', 'warn', 1200);
+      setTimeout(() => {
+        window.location.href = '/login';
+      }, 700);
+    }
     throw new Error('Session expired');
   }
   if (!res.ok) {
