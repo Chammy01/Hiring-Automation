@@ -40,6 +40,36 @@ async function loadUsers() {
   }
 }
 
+function promptForPassword(username) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:9999';
+    overlay.innerHTML = `
+      <div style="width:min(360px,90vw);background:#0f172a;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:16px;color:#fff">
+        <h3 style="margin:0 0 8px;font-size:1rem">Change password: ${username}</h3>
+        <input id="pw-modal-input" type="password" placeholder="New password" style="width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.05);color:#fff" />
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button id="pw-modal-save" type="button" style="flex:1">Save</button>
+          <button id="pw-modal-cancel" type="button" style="flex:1;background:transparent;border:1px solid rgba(255,255,255,.2);color:#fff">Cancel</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#pw-modal-input');
+    const close = (value = null) => {
+      overlay.remove();
+      resolve(value);
+    };
+    overlay.querySelector('#pw-modal-cancel').addEventListener('click', () => close(null));
+    overlay.querySelector('#pw-modal-save').addEventListener('click', () => close(input.value || null));
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') close(input.value || null);
+      if (event.key === 'Escape') close(null);
+    });
+    input.focus();
+  });
+}
+
 document.getElementById('create-user-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const errorEl = document.getElementById('create-error');
@@ -69,7 +99,7 @@ document.getElementById('users-list').addEventListener('click', async (event) =>
     if (action === 'delete') {
       await fetchJson(`/api/auth/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
     } else if (action === 'password') {
-      const password = window.prompt(`New password for ${username}`);
+      const password = await promptForPassword(username);
       if (!password) return;
       await fetchJson(`/api/auth/users/${encodeURIComponent(username)}/password`, {
         method: 'PUT',

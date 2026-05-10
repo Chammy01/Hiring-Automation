@@ -225,17 +225,13 @@ const loginFailures = new Map();
 const MAX_LOGIN_FAILURES = 5;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, bucket] of loginFailures.entries()) {
-    if (now - bucket.start > LOGIN_WINDOW_MS) {
-      loginFailures.delete(ip);
-    }
-  }
-}, LOGIN_WINDOW_MS).unref();
-
 function getIpLoginBucket(ip) {
   const now = Date.now();
+  for (const [key, bucket] of loginFailures.entries()) {
+    if (now - bucket.start > LOGIN_WINDOW_MS) {
+      loginFailures.delete(key);
+    }
+  }
   const bucket = loginFailures.get(ip);
   if (!bucket || now - bucket.start > LOGIN_WINDOW_MS) {
     const fresh = { start: now, failed: 0 };

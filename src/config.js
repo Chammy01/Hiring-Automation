@@ -45,6 +45,7 @@ const config = {
   localAuthRole: String(process.env.LOCAL_AUTH_ROLE || 'hr').toLowerCase(),
   jwtSecret: process.env.JWT_SECRET || process.env.ENCRYPTION_KEY || DEV_DEFAULT_ENCRYPTION_KEY,
   developerKey: String(process.env.DEVELOPER_KEY || '').trim(),
+  bcryptRounds: Number(process.env.BCRYPT_ROUNDS || 12),
   cookieSecure: String(process.env.COOKIE_SECURE || '').toLowerCase() !== 'false',
   mailboxAddress: process.env.MAILBOX_ADDRESS || 'applications@company.local',
   googleSheetsEnabled: String(process.env.GOOGLE_SHEETS_ENABLED || '').toLowerCase() === 'true',
