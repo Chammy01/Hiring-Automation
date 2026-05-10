@@ -81,6 +81,9 @@ async function api(path, options = {}) {
       setTimeout(() => {
         window.location.href = '/login';
       }, 700);
+      setTimeout(() => {
+        redirectingForSessionExpiry = false;
+      }, 5000);
     }
     throw new Error('Session expired');
   }

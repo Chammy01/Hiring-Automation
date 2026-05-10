@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { z } = require('zod');
 const { config } = require('./config');
 const { requirePermission } = require('./security');
@@ -215,7 +216,13 @@ function requireCsrfForJwt(req, res, next) {
   }
   const cookieToken = req.cookies && req.cookies.csrf_token;
   const headerToken = String(req.headers['x-csrf-token'] || '');
-  if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+  const cookieBuffer = cookieToken ? Buffer.from(cookieToken) : null;
+  const headerBuffer = headerToken ? Buffer.from(headerToken) : null;
+  const matches = cookieBuffer &&
+    headerBuffer &&
+    cookieBuffer.length === headerBuffer.length &&
+    crypto.timingSafeEqual(cookieBuffer, headerBuffer);
+  if (!matches) {
     return res.status(403).json({ error: 'Invalid CSRF token' });
   }
   return next();

@@ -25,7 +25,7 @@ function verifyJwtToken(token) {
 }
 
 function hashPassword(password) {
-  const rounds = Number.isFinite(config.bcryptRounds) ? Math.max(4, Math.min(15, config.bcryptRounds)) : 12;
+  const rounds = Number.isFinite(config.bcryptRounds) ? Math.max(10, Math.min(15, config.bcryptRounds)) : 12;
   return bcrypt.hash(String(password), rounds);
 }
 
