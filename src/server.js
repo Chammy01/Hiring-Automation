@@ -97,7 +97,9 @@ function setSecurityHeaders(req, res, next) {
 app.use(setSecurityHeaders);
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
-const allowedOrigins = config.allowedOriginsList || [];
+const allowedOrigins = config.allowedOriginsList || [
+  'https://hiring-automation-production.up.railway.app',
+];
 
 app.use(cors(
   {
