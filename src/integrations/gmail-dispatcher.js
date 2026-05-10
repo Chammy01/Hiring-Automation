@@ -252,6 +252,14 @@ async function sendDispatch(dispatchId) {
   throw lastError;
 }
 
+function queueOutboundDispatch(opts = {}) {
+  return enqueueDispatch(opts);
+}
+
+async function sendOutboundDispatch(dispatchId) {
+  return sendDispatch(dispatchId);
+}
+
 // ─── Exports ──────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -262,5 +270,7 @@ module.exports = {
   renderTemplate,
   backoffDelayMs,
   resetOAuthClient,
-  buildRawMessage
+  buildRawMessage,
+  queueOutboundDispatch,
+  sendOutboundDispatch
 };
