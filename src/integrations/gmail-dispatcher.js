@@ -4,22 +4,7 @@
  * Gmail outbound dispatcher.
  *
  * Sends queued outbound_dispatch jobs via the Gmail API (OAuth2).
- * Falls back to a no-op "simulated send" when GMAIL_DISPATCH_ENABLED is not true,
- * so the rest of the application continues to work without Gmail configured.
- *
- * The dispatcher:
- *  1. Creates a dispatch record in the JSON store (or PostgreSQL when enabled).
- *  2. Attempts to send via Gmail API immediately (or marks as queued for the worker).
- *  3. On transient failure, retries with exponential backoff up to maxRetries.
- *  4. Persists status transitions: queued → sending → sent | failed.
- *
- * Environment variables (documented in .env.example):
- *   GMAIL_DISPATCH_ENABLED    - "true" to use real Gmail send
- *   GMAIL_CREDENTIALS_PATH    - path to OAuth Desktop credentials.json
- *   GMAIL_TOKEN_PATH          - path to stored OAuth token
- *   GMAIL_DISPATCH_FROM       - sender address (must match authorized Gmail account)
- *   GMAIL_DISPATCH_MAX_RETRIES - max retry attempts (default: 3)
- *   GMAIL_DISPATCH_RETRY_BASE_MS - base backoff ms (default: 1000)
+ * Falls back to a no-op "simulated send" when GMAIL_DISPATCH_ENABLED is not true.
  */
 
 const crypto = require('node:crypto');
@@ -28,7 +13,7 @@ const { config } = require('../config');
 const { updateStore, readStore } = require('../store');
 const { encryptText, decryptText } = require('../security');
 
-// googleapis is a prod dependency — loaded lazily to keep tests fast
+// googleapis is a prod dependency — loaded lazily
 let google;
 try {
   google = require('googleapis').google;
@@ -38,12 +23,6 @@ try {
 
 // ─── Template rendering ───────────────────────────────────────────────────────
 
-/**
- * Replace {{varName}} placeholders in a template string.
- * @param {string} template
- * @param {Record<string,string>} vars
- * @returns {string}
- */
 function renderTemplate(template, vars = {}) {
   return String(template || '').replace(
     /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
@@ -51,7 +30,7 @@ function renderTemplate(template, vars = {}) {
   );
 }
 
-// ─── OAuth client (reused across calls in same process) ──────────────────────
+// ─── OAuth client ────────────────────────────────────────────────────────────
 
 let _oAuth2Client = null;
 
@@ -92,7 +71,11 @@ function getOAuthClient() {
   return oAuth2Client;
 }
 
-// ─── Build RFC 2822 email and base64url-encode it ────────────────────────────
+function resetOAuthClient() {
+  _oAuth2Client = null;
+}
+
+// ─── Build RFC 2822 email ────────────────────────────────────────────────────
 
 function buildRawMessage(to, from, subject, bodyText) {
   const boundary = `----=_Part_${crypto.randomUUID()}`;
@@ -112,49 +95,61 @@ function buildRawMessage(to, from, subject, bodyText) {
     `--${boundary}--`
   ];
   const raw = lines.join('\r\n');
-  // Gmail API requires base64url (no padding '+' → '-', '/' → '_', strip '=')
   return Buffer.from(raw).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-// ─── Exponential backoff helper ───────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function backoffDelayMs(attempt, baseMs) {
   const jitter = Math.random() * 200;
   return Math.min(baseMs * 2 ** attempt + jitter, 30_000);
 }
 
-// ─── Core send (real Gmail API) ───────────────────────────────────────────────
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientError(err) {
+  if (!err) return false;
+  const msg = String(err.message || '').toLowerCase();
+  return (
+    msg.includes('econnreset') ||
+    msg.includes('etimedout') ||
+    msg.includes('enotfound') ||
+    msg.includes('rate limit') ||
+    msg.includes('quota') ||
+    (err.code && [429, 500, 502, 503, 504].includes(Number(err.code)))
+  );
+}
+
+// ─── Core Send ────────────────────────────────────────────────────────────────
 
 async function sendViaGmail(to, from, subject, bodyText) {
   const auth = getOAuthClient();
   const gmail = google.gmail({ version: 'v1', auth });
   const raw = buildRawMessage(to, from, subject, bodyText);
   const res = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
-  return res.data.id; // Gmail message ID
+  return res.data.id;
 }
 
-// ─── Store helpers ────────────────────────────────────────────────────────────
-
-function nowIso() {
-  return new Date().toISOString();
-}
+// ─── Store Actions ────────────────────────────────────────────────────────────
 
 function sanitizeDispatch(dispatch) {
   if (!dispatch) return null;
   const { body, bodyEncrypted, ...rest } = dispatch;
-  return {
-    ...rest,
-    hasBody: Boolean(bodyEncrypted || body)
-  };
-}
-
-function getDispatch(id) {
-  const dispatch = readStore().outboundDispatches.find((d) => d.id === id) || null;
-  return sanitizeDispatch(dispatch);
+  return { ...rest, hasBody: Boolean(bodyEncrypted || body) };
 }
 
 function getDispatchRaw(id) {
   return readStore().outboundDispatches.find((d) => d.id === id) || null;
+}
+
+function getDispatch(id) {
+  return sanitizeDispatch(getDispatchRaw(id));
 }
 
 function updateDispatch(id, fields) {
@@ -167,22 +162,17 @@ function updateDispatch(id, fields) {
   });
 }
 
-// ─── Enqueue ─────────────────────────────────────────────────────────────────
+function listDispatches(filters = {}) {
+  const dispatches = readStore().outboundDispatches || [];
+  return dispatches.filter((d) => {
+    if (filters.status && d.status !== filters.status) return false;
+    if (filters.candidateId && d.candidateId !== filters.candidateId) return false;
+    return true;
+  }).map(sanitizeDispatch);
+}
 
-/**
- * Create a new outbound dispatch job.
- *
- * @param {object} opts
- * @param {string}  opts.to            - Recipient email address
- * @param {string}  [opts.from]        - Sender (defaults to GMAIL_DISPATCH_FROM / FROM_EMAIL)
- * @param {string}  opts.subject       - Email subject (may contain {{vars}})
- * @param {string}  opts.body          - Email body text (may contain {{vars}})
- * @param {object}  [opts.vars]        - Template variables for subject and body
- * @param {string}  [opts.templateKey] - Optional reference key for record keeping
- * @param {string}  [opts.candidateId] - Linked candidate ID
- * @param {number}  [opts.maxRetries]
- * @returns {{ dispatch: object }}
- */
+// ─── Public API ───────────────────────────────────────────────────────────────
+
 function enqueueDispatch(opts = {}) {
   const id = crypto.randomUUID();
   const from = opts.from || config.gmailDispatchFrom;
@@ -223,38 +213,18 @@ function enqueueDispatch(opts = {}) {
   return { dispatch: sanitizeDispatch(dispatch) };
 }
 
-// ─── Send (with retry logic) ──────────────────────────────────────────────────
-
-/**
- * Attempt to send a queued dispatch.
- * Handles retry with exponential backoff internally.
- *
- * @param {string} dispatchId
- * @returns {Promise<object>} The updated dispatch record
- */
 async function sendDispatch(dispatchId) {
   const dispatch = getDispatchRaw(dispatchId);
-  if (!dispatch) {
-    throw new Error(`Dispatch not found: ${dispatchId}`);
-  }
-
-  if (dispatch.status === 'sent') {
-    return sanitizeDispatch(dispatch);
-  }
+  if (!dispatch) throw new Error(`Dispatch not found: ${dispatchId}`);
+  if (dispatch.status === 'sent') return sanitizeDispatch(dispatch);
 
   const maxRetries = dispatch.maxRetries != null ? dispatch.maxRetries : config.gmailDispatchMaxRetries;
   const baseMs = config.gmailDispatchRetryBaseMs;
 
   updateDispatch(dispatchId, { status: 'sending' });
 
-  // If Gmail dispatch is not enabled, simulate a successful send
   if (!config.gmailDispatchEnabled) {
-    updateDispatch(dispatchId, {
-      status: 'sent',
-      sentAt: nowIso(),
-      lastError: null
-    });
-    console.log(`[gmail-dispatcher] Simulated send to "${dispatch.to}" (GMAIL_DISPATCH_ENABLED=false)`);
+    updateDispatch(dispatchId, { status: 'sent', sentAt: nowIso(), lastError: null });
     return getDispatch(dispatchId);
   }
 
@@ -263,71 +233,23 @@ async function sendDispatch(dispatchId) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const providerMsgId = await sendViaGmail(dispatch.to, dispatch.from, dispatch.subject, bodyText);
-      updateDispatch(dispatchId, {
-        status: 'sent',
-        providerMsgId,
-        sentAt: nowIso(),
-        retryCount: attempt,
-        lastError: null
-      });
-      console.log(`[gmail-dispatcher] Sent message to "${dispatch.to}" (provider id: ${providerMsgId})`);
+      updateDispatch(dispatchId, { status: 'sent', providerMsgId, sentAt: nowIso(), retryCount: attempt, lastError: null });
       return getDispatch(dispatchId);
     } catch (err) {
       lastError = err;
-      const isTransient = isTransientError(err);
-      console.warn(
-        `[gmail-dispatcher] Send attempt ${attempt + 1}/${maxRetries + 1} failed for dispatch ${dispatchId}: ${err.message}`
-      );
-
-      if (!isTransient || attempt >= maxRetries) {
-        break;
-      }
-
-      const delay = backoffDelayMs(attempt, baseMs);
-      console.log(`[gmail-dispatcher] Retrying in ${Math.round(delay)}ms…`);
-      await sleep(delay);
+      if (!isTransientError(err) || attempt >= maxRetries) break;
+      await sleep(backoffDelayMs(attempt, baseMs));
     }
   }
 
-  // All attempts failed
-  const nextRetryAt = new Date(Date.now() + backoffDelayMs(dispatch.retryCount + 1, baseMs)).toISOString();
   updateDispatch(dispatchId, {
     status: 'failed',
-    lastError: lastError ? lastError.message : 'Unknown error',
+    lastError: lastError.message,
     retryCount: (dispatch.retryCount || 0) + 1,
-    nextRetryAt: (dispatch.retryCount || 0) + 1 < maxRetries ? nextRetryAt : null
+    nextRetryAt: (dispatch.retryCount || 0) + 1 < maxRetries ? new Date(Date.now() + 5000).toISOString() : null
   });
 
-  throw lastError || new Error('Send failed after retries');
-}
-
-function isTransientError(err) {
-  if (!err) return false;
-  const msg = String(err.message || '').toLowerCase();
-  // Network errors, rate limits, and 5xx are transient
-  return (
-    msg.includes('econnreset') ||
-    msg.includes('etimedout') ||
-    msg.includes('enotfound') ||
-    msg.includes('rate limit') ||
-    msg.includes('quota') ||
-    (err.code && [429, 500, 502, 503, 504].includes(Number(err.code)))
-  );
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ─── List helpers ─────────────────────────────────────────────────────────────
-
-function listDispatches(filters = {}) {
-  const dispatches = readStore().outboundDispatches || [];
-  return dispatches.filter((d) => {
-    if (filters.status && d.status !== filters.status) return false;
-    if (filters.candidateId && d.candidateId !== filters.candidateId) return false;
-    return true;
-  }).map(sanitizeDispatch);
+  throw lastError;
 }
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
