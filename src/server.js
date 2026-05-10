@@ -97,27 +97,31 @@ function setSecurityHeaders(req, res, next) {
 app.use(setSecurityHeaders);
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
-const allowedOrigins = config.allowedOriginsList || [
-  'https://hiring-automation-production.up.railway.app',
-];
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(x => x.trim())
+  : ['https://hiring-automation-production.up.railway.app'];
 
-app.use(cors(
-  {
-    origin: (origin, callback) => {
-      if (!origin) {
-        return callback(null, true);
-      }
-      if (allowedOrigins.length > 0 && allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      if (!config.runtime.isProduction && allowedOrigins.length === 0) {
-        return callback(null, true);
-      }
-      return callback(new Error('CORS origin is not allowed'));
-    },
-    credentials: true
-  }
-));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    console.error('[CORS] Blocked request from:', origin);
+    return callback(new Error('CORS origin is not allowed'));
+  },
+  credentials: true
+}));const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(x => x.trim())
+  : ['https://hiring-automation-production.up.railway.app'];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    console.error('[CORS] Blocked request from:', origin);
+    return callback(new Error('CORS origin is not allowed'));
+  },
+  credentials: true
+}));
 
 // ─── Body size limits ─────────────────────────────────────────────────────────
 // Large bodies are only accepted on document-upload routes (item 18).
