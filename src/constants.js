@@ -59,6 +59,12 @@ const EMAIL_STATUSES = {
   FAILED: 'failed'
 };
 
+const DEFAULT_FOLLOW_UP_MESSAGE =
+  'Dear {{candidateName}},\n\nThis is a follow-up regarding your application for {{position}}. Please submit any missing requirements before {{deadline}}.\n\nMissing requirements:\n{{missingDocuments}}\n\nThank you.';
+
+const DEFAULT_SCHEDULE_INTERVIEW_MESSAGE =
+  'Hello {{candidateName}},\n\nYour interview for {{position}} is scheduled on {{interviewDate}} at {{interviewTime}}.\n\nLocation/Link: {{interviewLocation}}\n\nPlease reply to confirm your availability.';
+
 const DEFAULT_TEMPLATES = {
   acknowledgement:
     'Dear Applicant,\n\nThank you for your interest in applying to our Office.\n\nIn view that the position you are applying for is a regular position, you are hereby requested to submit the following documentary requirements on or before {{deadline}}:\n\n• Letter of Intent\n• One (1) copy of a fully accomplished Personal Data Sheet (PDS) and Work Experience Sheet (WES) (CSC Form No. 212, s. 2025)\n(Forms may be downloaded from the Civil Service Commission website)\n• One (1) copy of relevant training/seminar certificates (if applicable)\n• One (1) copy of awards received from your last promotion (if applicable)\n• One (1) copy of your latest Individual Performance Commitment and Review (IPCR) (if applicable)\n• One (1) copy of proof of CSC Eligibility\n \nKindly submit the above documents through email using the prescribed subject format:\n\nApplication for (Position and Title)\n(ex: Application for Administrative Assistant I (Computer Operator I))\n\nPlease be advised that non-compliance with the required documents, failure to follow the prescribed subject format, or submission beyond the stated deadline shall result in automatic disqualification from the selection process.\n\nThis is an automated reminder. If this has already been taken care of, please disregard. We kindly ask that you reply to acknowledge receipt of this message.\n\nThank you.\nVery truly yours,',
@@ -98,6 +104,8 @@ module.exports = {
   SCORING_WEIGHTS,
   SCORING_MULTIPLIERS,
   EMAIL_STATUSES,
+  DEFAULT_FOLLOW_UP_MESSAGE,
+  DEFAULT_SCHEDULE_INTERVIEW_MESSAGE,
   DEFAULT_TEMPLATES,
   ROLE_PERMISSIONS
 };

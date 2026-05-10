@@ -8,7 +8,9 @@ const {
   SCORING_WEIGHTS,
   SCORING_MULTIPLIERS,
   EMAIL_STATUSES,
-  DEFAULT_TEMPLATES
+  DEFAULT_TEMPLATES,
+  DEFAULT_FOLLOW_UP_MESSAGE,
+  DEFAULT_SCHEDULE_INTERVIEW_MESSAGE
 } = require('./constants');
 const { queueOutboundDispatch, sendOutboundDispatch } = require('./integrations/gmail-dispatcher');
 const { config } = require('./config');
@@ -689,7 +691,7 @@ function updateScoringWeights(partialWeights = {}) {
 
 async function updateCandidateStatus(candidateId, action, payload = {}) {
   let result;
-  let followUpDispatchPayload = null;
+  let followUpEmailPayload = null;
 
   updateStore((state) => {
     const candidate = state.candidates.find((x) => x.id === candidateId);
@@ -714,17 +716,13 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
       const subject = `Initial Interview Schedule - ${candidate.position}`;
       const interviewLocation = payload.meetingLink || payload.venue || '';
       const scheduleInterviewMessage = String(appSettings.scheduleInterviewMessage || '').trim()
-        || 'Hello {{candidateName}},\n\nYour interview for {{position}} is scheduled on {{interviewDate}} at {{interviewTime}}.\n\nLocation/Link: {{interviewLocation}}\n\nPlease reply to confirm your availability.';
+        || DEFAULT_SCHEDULE_INTERVIEW_MESSAGE;
       const body = renderMessageTemplate(scheduleInterviewMessage, {
         candidateName: candidate.fullName,
-        fullName: candidate.fullName,
         position: candidate.position,
         interviewDate: payload.date,
-        date: payload.date,
         interviewTime: payload.time,
-        time: payload.time,
-        interviewLocation,
-        location: interviewLocation
+        interviewLocation
       });
       queueEmailEvent(state, {
         candidateId: candidate.id,
@@ -752,18 +750,16 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
         .map(([doc, status]) => `${doc} (${status})`);
       const missingDocuments = missing.join('\n') || 'No missing items recorded.';
       const followUpMessage = String(appSettings.followUpMessage || '').trim()
-        || 'Dear {{candidateName}},\n\nThis is a follow-up regarding your application for {{position}}. Please submit any missing requirements before {{deadline}}.\n\nMissing requirements:\n{{missingDocuments}}\n\nThank you.';
+        || DEFAULT_FOLLOW_UP_MESSAGE;
       const body = renderMessageTemplate(followUpMessage, {
         candidateName: candidate.fullName,
-        fullName: candidate.fullName,
         candidateEmail: candidate.email,
         position: candidate.position,
         deadline: appSettings.hiringDeadline,
-        missingDocuments,
-        missingList: missingDocuments
+        missingDocuments
       });
 
-      followUpDispatchPayload = {
+      followUpEmailPayload = {
         candidateId: candidate.id,
         to: candidate.email,
         subject: 'Follow-up: Application Requirements',
@@ -781,9 +777,9 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
   });
 
   // Trigger the actual Gmail send outside the synchronous store update.
-  if (followUpDispatchPayload) {
+  if (followUpEmailPayload) {
     try {
-      const dispatch = queueOutboundDispatch(followUpDispatchPayload);
+      const dispatch = queueOutboundDispatch(followUpEmailPayload);
       const dispatchId = dispatch && dispatch.dispatch && dispatch.dispatch.id;
       if (dispatchId) {
         console.log(`[followUp] Sending dispatch ${dispatchId} via Gmail...`);

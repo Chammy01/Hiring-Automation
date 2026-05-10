@@ -1,7 +1,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { config } = require('./config');
-const { DEFAULT_TEMPLATES, SCORING_WEIGHTS } = require('./constants');
+const {
+  DEFAULT_TEMPLATES,
+  SCORING_WEIGHTS,
+  DEFAULT_FOLLOW_UP_MESSAGE,
+  DEFAULT_SCHEDULE_INTERVIEW_MESSAGE
+} = require('./constants');
 
 function makeDefaultAppSettings() {
   return {
@@ -21,8 +26,8 @@ function makeDefaultAppSettings() {
     maxUploadSizeMb: 10,
     notifyNewApplication: true,
     reminderCadenceDays: 3,
-    followUpMessage: 'Dear {{candidateName}},\n\nThis is a follow-up regarding your application for {{position}}. Please submit any missing requirements before {{deadline}}.\n\nMissing requirements:\n{{missingDocuments}}\n\nThank you.',
-    scheduleInterviewMessage: 'Hello {{candidateName}},\n\nYour interview for {{position}} is scheduled on {{interviewDate}} at {{interviewTime}}.\n\nLocation/Link: {{interviewLocation}}\n\nPlease reply to confirm your availability.',
+    followUpMessage: DEFAULT_FOLLOW_UP_MESSAGE,
+    scheduleInterviewMessage: DEFAULT_SCHEDULE_INTERVIEW_MESSAGE,
     careerPageBanner: '',
     defaultJobVisibility: 'public',
     dataRetentionDays: 365
