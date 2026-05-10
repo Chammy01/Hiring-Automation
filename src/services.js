@@ -1329,26 +1329,6 @@ function updateAppSettings(updates = {}) {
 
 // ─── Gmail outbound dispatch service methods ──────────────────────────────────
 
-/**
- * Queue an outbound email for delivery via the Gmail dispatcher.
- * Falls back gracefully when GMAIL_DISPATCH_ENABLED is false.
- *
- * @param {object} opts  - see gmail-dispatcher.enqueueDispatch
- * @returns {{ dispatch: object }}
- */
-function queueOutboundDispatch(opts = {}) {
-  return enqueueDispatch(opts);
-}
-
-/**
- * Attempt (or retry) sending a queued dispatch.
- * @param {string} dispatchId
- * @returns {Promise<object>}
- */
-async function sendOutboundDispatch(dispatchId) {
-  return sendDispatch(dispatchId);
-}
-
 function getOutboundDispatch(id) {
   return getDispatch(id);
 }
