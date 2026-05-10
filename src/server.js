@@ -386,6 +386,8 @@ const appSettingsSchema = z.object({
   maxUploadSizeMb: z.number().positive().optional(),
   notifyNewApplication: z.boolean().optional(),
   reminderCadenceDays: z.number().int().positive().optional(),
+  followUpMessage: z.string().optional(),
+  scheduleInterviewMessage: z.string().optional(),
   careerPageBanner: z.string().optional(),
   defaultJobVisibility: z.enum(['public', 'private', 'draft']).optional(),
   dataRetentionDays: z.number().int().positive().optional()
@@ -403,7 +405,7 @@ const loginSchema = z.object({
 const registerSchema = z.object({
   username: z.string().min(3),
   password: z.string().min(12),
-  role: z.enum(['admin', 'hr', 'developer'])
+  role: z.enum(['admin', 'editor', 'hr', 'developer'])
 });
 
 const changePasswordSchema = z.object({

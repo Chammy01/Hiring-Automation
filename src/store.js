@@ -21,6 +21,8 @@ function makeDefaultAppSettings() {
     maxUploadSizeMb: 10,
     notifyNewApplication: true,
     reminderCadenceDays: 3,
+    followUpMessage: 'Dear {{candidateName}},\n\nThis is a follow-up regarding your application for {{position}}. Please submit any missing requirements before {{deadline}}.\n\nMissing requirements:\n{{missingDocuments}}\n\nThank you.',
+    scheduleInterviewMessage: 'Hello {{candidateName}},\n\nYour interview for {{position}} is scheduled on {{interviewDate}} at {{interviewTime}}.\n\nLocation/Link: {{interviewLocation}}\n\nPlease reply to confirm your availability.',
     careerPageBanner: '',
     defaultJobVisibility: 'public',
     dataRetentionDays: 365

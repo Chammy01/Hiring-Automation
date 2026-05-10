@@ -428,6 +428,18 @@
                 <input id="s-reminderCadenceDays" name="reminderCadenceDays" type="number" min="1" step="1" placeholder="3" />
                 <span class="form-hint">Send follow-up reminders every N days after documents are pending.</span>
               </div>
+              <div id="settings-message-templates">
+                <div class="form-field">
+                  <label for="s-followUpMessage">Follow-up Message Template</label>
+                  <textarea id="s-followUpMessage" name="followUpMessage" rows="6" placeholder="Dear {{candidateName}}, ..."></textarea>
+                  <span class="form-hint">Placeholders: {{candidateName}}, {{position}}, {{deadline}}, {{missingDocuments}}, {{candidateEmail}}</span>
+                </div>
+                <div class="form-field">
+                  <label for="s-scheduleInterviewMessage">Schedule Interview Message Template</label>
+                  <textarea id="s-scheduleInterviewMessage" name="scheduleInterviewMessage" rows="6" placeholder="Hello {{candidateName}}, ..."></textarea>
+                  <span class="form-hint">Placeholders: {{candidateName}}, {{position}}, {{interviewDate}}, {{interviewTime}}, {{interviewLocation}}</span>
+                </div>
+              </div>
               <div class="form-field checkbox-field">
                 <label class="checkbox-label">
                   <input id="s-notifyNewApplication" name="notifyNewApplication" type="checkbox" />

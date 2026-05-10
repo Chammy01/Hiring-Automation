@@ -1439,6 +1439,8 @@ function applySettingsToForm(s) {
   get('s-timezone').value = s.timezone || '';
   get('s-autoResponseSubject').value = s.autoResponseSubject || '';
   get('s-reminderCadenceDays').value = s.reminderCadenceDays ?? 3;
+  get('s-followUpMessage').value = s.followUpMessage || '';
+  get('s-scheduleInterviewMessage').value = s.scheduleInterviewMessage || '';
   get('s-notifyNewApplication').checked = Boolean(s.notifyNewApplication);
   get('s-interviewWindowStart').value = s.interviewWindowStart || '';
   get('s-interviewWindowEnd').value = s.interviewWindowEnd || '';
@@ -1446,6 +1448,18 @@ function applySettingsToForm(s) {
   get('s-maxUploadSizeMb').value = s.maxUploadSizeMb ?? 10;
   get('s-careerPageBanner').value = s.careerPageBanner || '';
   get('s-dataRetentionDays').value = s.dataRetentionDays ?? 365;
+}
+
+function updateMessageTemplateEditability() {
+  const editableRoles = new Set(['admin', 'editor']);
+  const isEditable = editableRoles.has(String((currentUser && currentUser.role) || '').toLowerCase());
+  const templateFields = ['s-followUpMessage', 's-scheduleInterviewMessage'];
+  for (const id of templateFields) {
+    const field = document.getElementById(id);
+    if (!field) continue;
+    field.readOnly = !isEditable;
+    field.setAttribute('aria-readonly', String(!isEditable));
+  }
 }
 
 function readSettingsFromForm() {
@@ -1463,6 +1477,8 @@ function readSettingsFromForm() {
     timezone: get('s-timezone').value.trim(),
     autoResponseSubject: get('s-autoResponseSubject').value.trim(),
     reminderCadenceDays: Number(get('s-reminderCadenceDays').value) || 3,
+    followUpMessage: get('s-followUpMessage').value,
+    scheduleInterviewMessage: get('s-scheduleInterviewMessage').value,
     notifyNewApplication: get('s-notifyNewApplication').checked,
     interviewWindowStart: get('s-interviewWindowStart').value,
     interviewWindowEnd: get('s-interviewWindowEnd').value,
@@ -1477,6 +1493,7 @@ async function loadSettingsPage() {
   try {
     currentSettings = await api('/api/settings');
     applySettingsToForm(currentSettings);
+    updateMessageTemplateEditability();
   } catch (err) {
     toast(`Failed to load settings: ${err.message}`, 'error', 0);
   }

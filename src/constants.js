@@ -70,6 +70,14 @@ const DEFAULT_TEMPLATES = {
 
 const ROLE_PERMISSIONS = {
   viewer: ['read:candidates', 'read:dashboard'],
+  editor: [
+    'read:candidates',
+    'read:dashboard',
+    'write:candidates',
+    'write:templates',
+    'read:audit',
+    'read:email'
+  ],
   hr: [
     'read:candidates',
     'read:dashboard',
