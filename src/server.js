@@ -109,18 +109,6 @@ app.use(cors({
     return callback(new Error('CORS origin is not allowed'));
   },
   credentials: true
-}));const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(x => x.trim())
-  : ['https://hiring-automation-production.up.railway.app'];
-
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    console.error('[CORS] Blocked request from:', origin);
-    return callback(new Error('CORS origin is not allowed'));
-  },
-  credentials: true
 }));
 
 // ─── Body size limits ─────────────────────────────────────────────────────────
