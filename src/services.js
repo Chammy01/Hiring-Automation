@@ -10,6 +10,7 @@ const {
   EMAIL_STATUSES,
   DEFAULT_TEMPLATES
 } = require('./constants');
+const { queueOutboundDispatch, sendOutboundDispatch } = require('./integrations/gmail-dispatcher');
 const { config } = require('./config');
 const { encryptText, decryptText } = require('./security');
 const { nowIso } = require('./utils');
@@ -746,19 +747,18 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
         state.templates
       );
 
-      // Queue via the outbound dispatcher so the email is actually sent
-      // through Gmail (not just logged as "sent" in emailEvents).
-      const { dispatch } = enqueueDispatch({
+      // New code to dispatch real email
+      const dispatch = queueOutboundDispatch({
         candidateId: candidate.id,
         to: candidate.email,
         subject: 'Follow-up: Application Requirements',
-        body,
-        templateKey: 'missingDocs'
+        body
       });
-      followUpDispatchId = dispatch.id;
-      console.log(`[followUp] Queued dispatch ${dispatch.id} for candidate ${candidate.id} <${candidate.email}>`);
+      sendOutboundDispatch(dispatch.dispatch.id).catch((e) => {
+        console.error("Failed to send follow-up email:", e.message);
+      });
 
-      addAuditLog(state, 'candidate.follow_up_sent', candidate.id, { dispatchId: dispatch.id });
+      addAuditLog(state, 'candidate.follow_up_sent', candidate.id);
     } else {
       throw new Error('Unsupported action');
     }
