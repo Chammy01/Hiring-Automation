@@ -86,16 +86,22 @@ if (config.hrApiKey && config.hrApiKeys.size === 0) {
   config.hrApiKeys.set(config.hrApiKey, String(config.hrDefaultRole || 'hr').toLowerCase());
 }
 
-if (!isTest && !config.hrApiKeys.size) {
+// Only enforce HR_API_KEY requirement in production OR if we're running as a hosted service (Railway/Render)
+const isHostedService = process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RENDER === 'true' || process.env.HEROKU_APP_NAME;
+if (!isTest && isHostedService && !config.hrApiKeys.size) {
   throw new Error(
-    '[config] HR_API_KEY (or HR_API_KEYS) is required outside test environments. ' +
-    'Set it in environment variables (see .env.example).'
+    '[config] HR_API_KEY (or HR_API_KEYS) is required for hosted deployment. ' +
+    'Set it in your platform\'s environment variables.'
   );
 }
 
-// Only load .env file in local development, not in production/Railway
-if (process.env.NODE_ENV !== 'production' && !process.env.RAILWAY_ENVIRONMENT_NAME && !process.env.RENDER) {
-  require('dotenv').config();
+// Warn if no API key is set in local development
+if (!isTest && isLocalDev && !config.hrApiKeys.size) {
+  console.warn(
+    '[config] WARNING: No HR_API_KEY is set. ' +
+    'Running in LOCAL DEV MODE with no authentication. ' +
+    'Set HR_API_KEY for production deployments.'
+  );
 }
 
 // Enforce strong encryption key outside local/test mode.
