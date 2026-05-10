@@ -62,25 +62,29 @@ function getOAuthClient() {
     throw new Error('googleapis package is not available — install it or disable GMAIL_DISPATCH_ENABLED');
   }
 
-  if (!fs.existsSync(config.gmailCredentialsPath)) {
-    throw new Error(
-      `Gmail credentials file not found at "${config.gmailCredentialsPath}". ` +
-        'Set GMAIL_CREDENTIALS_PATH or place credentials.json in the project root.'
-    );
+  // 1. Resolve Credentials (Variable first, then File)
+  let credentials;
+  if (config.googleSheetsCredentialsJson) { // Using the same variable name pattern as your Sheets integration
+    credentials = JSON.parse(config.googleSheetsCredentialsJson);
+  } else if (fs.existsSync(config.gmailCredentialsPath)) {
+    credentials = JSON.parse(fs.readFileSync(config.gmailCredentialsPath, 'utf8'));
+  } else {
+    throw new Error('Gmail credentials not found in environment variables or file system.');
   }
 
-  const credentials = JSON.parse(fs.readFileSync(config.gmailCredentialsPath, 'utf8'));
   const { client_id, client_secret, redirect_uris } = credentials.installed || credentials.web;
   const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
 
-  if (!fs.existsSync(config.gmailTokenPath)) {
-    throw new Error(
-      `Gmail token not found at "${config.gmailTokenPath}". ` +
-        'Run the gmail-intake worker once to perform the initial OAuth authorization flow.'
-    );
+  // 2. Resolve Token (Variable first, then File)
+  let token;
+  if (process.env.GMAIL_TOKEN_JSON) {
+    token = JSON.parse(process.env.GMAIL_TOKEN_JSON);
+  } else if (fs.existsSync(config.gmailTokenPath)) {
+    token = JSON.parse(fs.readFileSync(config.gmailTokenPath, 'utf8'));
+  } else {
+    throw new Error('Gmail token not found in environment variables or file system.');
   }
 
-  const token = JSON.parse(fs.readFileSync(config.gmailTokenPath, 'utf8'));
   oAuth2Client.setCredentials(token);
   _oAuth2Client = oAuth2Client;
   return oAuth2Client;
