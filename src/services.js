@@ -146,6 +146,31 @@ function normalizePosition(position) {
   return String(position || '').trim();
 }
 
+function parseAllowedFileTypes(settings) {
+  return String((settings && settings.allowedFileTypes) || '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase().replace(/^\./, ''))
+    .filter(Boolean);
+}
+
+function fileExtension(fileName) {
+  const idx = String(fileName || '').lastIndexOf('.');
+  return idx >= 0 ? String(fileName).slice(idx + 1).toLowerCase() : '';
+}
+
+function validateUploadPolicy({ fileName, sizeBytes }, settings) {
+  const allowedTypes = parseAllowedFileTypes(settings);
+  const maxUploadSizeMb = Number(settings.maxUploadSizeMb || 10);
+  const maxBytes = maxUploadSizeMb * 1024 * 1024;
+  const extension = fileExtension(fileName);
+  if (allowedTypes.length > 0 && extension && !allowedTypes.includes(extension)) {
+    throw new Error(`File type ".${extension}" is not allowed`);
+  }
+  if (Number.isFinite(sizeBytes) && sizeBytes > maxBytes) {
+    throw new Error(`File "${fileName}" exceeds max upload size of ${maxUploadSizeMb}MB`);
+  }
+}
+
 function findChecklist(position) {
   return POSITION_CHECKLISTS[normalizePosition(position)] || DEFAULT_REQUIRED_DOCUMENTS;
 }
@@ -371,6 +396,10 @@ function submitCandidateDocuments(candidateId, payload) {
     const invalidAttachments = new Set(
       (Array.isArray(payload.invalidAttachments) ? payload.invalidAttachments : []).map((x) => normalize(x))
     );
+    const appSettings = getStateAppSettings(state);
+    for (const attachment of attachments) {
+      validateUploadPolicy({ fileName: attachment, sizeBytes: undefined }, appSettings);
+    }
 
     for (const requiredDoc of candidate.requiredDocuments) {
       const matches = attachments.filter((attachment) => attachmentMatchesDoc(attachment, requiredDoc));
@@ -1048,8 +1077,40 @@ function getAnalytics() {
   };
 }
 
-function exportBackup() {
-  return readStore();
+function sanitizeWebhookForResponse(hook) {
+  if (!hook || typeof hook !== 'object') {
+    return null;
+  }
+  return {
+    id: hook.id,
+    url: hook.url,
+    events: Array.isArray(hook.events) ? hook.events : [],
+    createdAt: hook.createdAt,
+    active: Boolean(hook.active),
+    hasSecret: Boolean(hook.secretEncrypted || hook.secret)
+  };
+}
+
+function exportBackup(actorContext = {}) {
+  const snapshot = readStore();
+  const sanitizedWebhooks = Array.isArray(snapshot?.settings?.webhooks)
+    ? snapshot.settings.webhooks.map(sanitizeWebhookForResponse)
+    : [];
+  const backup = {
+    ...snapshot,
+    settings: {
+      ...(snapshot.settings || {}),
+      webhooks: sanitizedWebhooks
+    }
+  };
+  updateStore((state) => {
+    addAuditLog(state, 'backup.exported', null, {
+      actor: actorContext.actor || null,
+      role: actorContext.role || null
+    });
+    return state;
+  });
+  return backup;
 }
 
 /**
@@ -1081,11 +1142,25 @@ function validateBackupPayload(payload) {
   }
 }
 
-function importBackup(payload) {
+function importBackup(payload, actorContext = {}) {
   validateBackupPayload(payload);
   let result;
   updateStore(() => {
     const restored = normalizeState(payload);
+    if (Array.isArray((restored.settings || {}).webhooks)) {
+      restored.settings.webhooks = restored.settings.webhooks.map((hook) => {
+        if (hook.secretEncrypted || !hook.secret) return hook;
+        return {
+          ...hook,
+          secretEncrypted: encryptText(hook.secret),
+          secret: undefined
+        };
+      });
+    }
+    addAuditLog(restored, 'backup.restored', null, {
+      actor: actorContext.actor || null,
+      role: actorContext.role || null
+    });
     result = restored;
     return restored;
   });
@@ -1110,8 +1185,13 @@ function submitCandidateDocumentsContent(candidateId, payload) {
 
     const files = Array.isArray(payload.files) ? payload.files : [];
     const classificationResults = [];
+    const appSettings = getStateAppSettings(state);
 
     for (const file of files) {
+      const estimatedSizeBytes = Number.isFinite(file.sizeBytes)
+        ? Number(file.sizeBytes)
+        : Buffer.byteLength(String(file.text || ''), 'utf8');
+      validateUploadPolicy({ fileName: file.fileName, sizeBytes: estimatedSizeBytes }, appSettings);
       const classification = classifyDocument(file.fileName, file.text);
       if (classification) {
         classificationResults.push({
@@ -1268,6 +1348,11 @@ function listOutboundDispatches(filters = {}) {
  * @returns {object} job record
  */
 function queueDocumentParsing(opts = {}) {
+  const settings = getAppSettings();
+  const estimatedSizeBytes = Number.isFinite(opts.sizeBytes)
+    ? Number(opts.sizeBytes)
+    : Buffer.byteLength(String(opts.text || ''), 'utf8');
+  validateUploadPolicy({ fileName: opts.fileName, sizeBytes: estimatedSizeBytes }, settings);
   return enqueueParsingJob(opts);
 }
 
@@ -1498,8 +1583,37 @@ const WEBHOOK_EVENTS = [
 ];
 
 function registerWebhook({ url, events, secret }) {
-  if (!url || typeof url !== 'string' || !url.startsWith('http')) {
-    throw new Error('A valid webhook URL (http/https) is required');
+  if (!url || typeof url !== 'string') {
+    throw new Error('A valid webhook URL is required');
+  }
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (_error) {
+    throw new Error('Invalid webhook URL format');
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Webhook URL must use https://');
+  }
+  const host = String(parsed.hostname || '').toLowerCase();
+  const isPrivateHost =
+    host === 'localhost' ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+    host === '0.0.0.0' ||
+    host === '::1';
+  if (isPrivateHost) {
+    throw new Error('Webhook URL host is not allowed');
+  }
+  if (config.webhookAllowedDomains.length > 0) {
+    const isAllowed = config.webhookAllowedDomains.some((domain) => host === domain || host.endsWith(`.${domain}`));
+    if (!isAllowed) {
+      throw new Error('Webhook URL domain is not in WEBHOOK_ALLOWED_DOMAINS');
+    }
   }
   const subscribedEvents = Array.isArray(events) && events.length > 0
     ? events.filter((e) => WEBHOOK_EVENTS.includes(e))
@@ -1514,13 +1628,13 @@ function registerWebhook({ url, events, secret }) {
       id: crypto.randomUUID(),
       url,
       events: subscribedEvents,
-      secret: secret || '',
+      secretEncrypted: secret ? encryptText(secret) : '',
       createdAt: nowIso(),
       active: true
     };
     state.settings.webhooks.push(hook);
     addAuditLog(state, 'webhook.registered', null, { url, events: subscribedEvents });
-    result = hook;
+    result = sanitizeWebhookForResponse(hook);
     return state;
   });
   return result;
@@ -1543,7 +1657,9 @@ function deleteWebhook(hookId) {
 
 function listWebhooks() {
   const state = readStore();
-  return Array.isArray(state.settings.webhooks) ? state.settings.webhooks : [];
+  return Array.isArray(state.settings.webhooks)
+    ? state.settings.webhooks.map(sanitizeWebhookForResponse).filter(Boolean)
+    : [];
 }
 
 /**
@@ -1554,7 +1670,10 @@ function listWebhooks() {
  * @param {object} data   - event payload
  */
 function emitWebhook(event, data) {
-  const hooks = listWebhooks().filter((h) => h.active && h.events.includes(event));
+  const state = readStore();
+  const hooks = Array.isArray((state.settings || {}).webhooks)
+    ? state.settings.webhooks.filter((h) => h.active && h.events.includes(event))
+    : [];
   if (hooks.length === 0) return;
 
   const { createHmac } = require('node:crypto');
@@ -1564,8 +1683,10 @@ function emitWebhook(event, data) {
   const body = JSON.stringify({ event, data, timestamp: nowIso() });
 
   for (const hook of hooks) {
-    const sig = hook.secret
-      ? createHmac('sha256', hook.secret).update(body).digest('hex')
+    // Backward compatibility: legacy records may still have plaintext `secret`.
+    const rawSecret = hook.secretEncrypted ? decryptText(hook.secretEncrypted) : (hook.secret || '');
+    const sig = rawSecret
+      ? createHmac('sha256', rawSecret).update(body).digest('hex')
       : '';
 
     const url = new URL(hook.url);
@@ -1581,7 +1702,8 @@ function emitWebhook(event, data) {
         'Content-Length': Buffer.byteLength(body),
         'X-Hiring-Event': event,
         ...(sig ? { 'X-Hiring-Signature': `sha256=${sig}` } : {})
-      }
+      },
+      timeout: Math.max(1000, Number(config.webhookTimeoutMs || 5000))
     };
 
     const req = reqFn(options, (res) => {
@@ -1591,6 +1713,9 @@ function emitWebhook(event, data) {
     });
     req.on('error', (err) => {
       console.warn(`[webhook] Failed to deliver "${event}" to ${hook.url}:`, err.message);
+    });
+    req.on('timeout', () => {
+      req.destroy(new Error('Webhook timeout'));
     });
     req.write(body);
     req.end();

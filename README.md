@@ -45,8 +45,8 @@ Open-source hiring workflow automation with intake, compliance validation, extra
 - Status updates reflected in workflow + sheet export.
 
 ### Phase 8 — Security, Audit, Reliability
-- Role-based access control (`viewer`, `hr`, `admin`) via request header.
-- Optional API key enforcement (`HR_API_KEY`).
+- Role-based access control (`viewer`, `hr`, `admin`) resolved server-side from API key identity.
+- Mandatory API key enforcement outside test (`HR_API_KEY` or `HR_API_KEYS`).
 - Encrypted email body storage (AES-256-GCM).
 - Full audit trail for workflow and configuration actions.
 - Backup/restore endpoints for datastore state.
@@ -77,12 +77,12 @@ All runtime settings are stored in `data/store.json` under `settings.appSettings
 - **Via the API (advanced):**
   ```bash
   # Read current settings
-  curl -H "x-role: hr" http://localhost:3000/api/settings
+  curl -H "x-api-key: <your-key>" http://localhost:3000/api/settings
 
   # Update specific fields
   curl -X PUT http://localhost:3000/api/settings \
     -H "Content-Type: application/json" \
-    -H "x-role: hr" \
+    -H "x-api-key: <your-key>" \
     -d '{"hiringDeadline":"2027-03-31T23:59:59.000Z","companyEmail":"hr@myoffice.gov.ph"}'
   ```
 - **Seed defaults:** On first boot (or after deleting `data/store.json`), all fields are seeded from environment variables or safe built-in defaults (see the `.env` section above). No migration steps are required.
@@ -161,8 +161,9 @@ DATA_FILE=data/store.json
 DOCUMENT_DEADLINE=2026-04-07T23:59:59+08:00
 FROM_EMAIL=hr@company.local
 MAILBOX_ADDRESS=applications@company.local
-HR_API_KEY=
-ROLE_HEADER=x-role
+HR_API_KEY=replace-with-strong-api-key
+HR_API_KEYS=
+ALLOWED_ORIGINS=http://localhost:3000
 ENCRYPTION_KEY=replace-with-your-own-long-random-secret
 GOOGLE_SHEETS_ENABLED=false
 GOOGLE_SHEETS_CREDENTIALS_JSON=
@@ -242,20 +243,16 @@ Expected response:
 
 ### 9) Use secured APIs (when testing with curl/Postman)
 
-Set role header in requests:
-- `x-role: viewer` → read-only dashboard/candidate views
-- `x-role: hr` → operational actions
-- `x-role: admin` → full permissions
-
-If `HR_API_KEY` is set, also send:
+Send API key in requests:
 - `x-api-key: <your-key>`
+- Role/permissions are derived server-side from `HR_API_KEYS` (or `HR_DEFAULT_ROLE` with single `HR_API_KEY`).
 
 Example intake call:
 
 ```bash
 curl -X POST http://localhost:3000/api/applications/intake \
   -H "Content-Type: application/json" \
-  -H "x-role: hr" \
+  -H "x-api-key: <your-key>" \
   -d '{
     "fullName":"Jane Doe",
     "email":"jane@example.com",
@@ -280,11 +277,21 @@ Restart the app and it will regenerate `data/store.json` automatically.
 - **Module not found**
   - Run `npm install` again
 - **403 Forbidden**
-  - Check `x-role` value; use `hr` or `admin` for write operations
+  - Ensure your API key is mapped to a role that has the required permission
 - **401 Unauthorized**
-  - If `HR_API_KEY` is configured, include correct `x-api-key`
+  - Include a valid `x-api-key` header
 - **Corrupt/invalid local data file**
   - Delete `data/store.json` and restart
+
+## Production Security Checklist
+
+- Set `HR_API_KEY` (or `HR_API_KEYS`) and require clients/workers to send `x-api-key`.
+- Set a strong `ENCRYPTION_KEY` (do not use development fallback).
+- Configure `ALLOWED_ORIGINS` explicitly.
+- Use HTTPS-only webhook URLs; optionally set `WEBHOOK_ALLOWED_DOMAINS`.
+- Restrict backup/restore access to admin credentials only.
+- Enable PostgreSQL SSL with verification (`POSTGRES_SSL=true` + CA/cert/key paths where needed).
+- Keep worker `API_BASE_URL` on HTTPS for non-local environments.
 
 ## Key API Endpoints
 
@@ -356,11 +363,11 @@ any Gmail configuration.
    ```bash
    curl -s -X POST http://localhost:3000/api/mail/dispatch \
      -H "Content-Type: application/json" \
-     -H "x-role: hr" \
+     -H "x-api-key: <your-key>" \
      -d '{"to":"candidate@example.com","subject":"Test {{role}}","body":"Hello, your application for {{role}} was received.","vars":{"role":"Software Engineer"}}'
 
    # Note the returned dispatch id, then trigger send:
-   curl -s -X POST http://localhost:3000/api/mail/dispatch/<id>/send -H "x-role: hr"
+   curl -s -X POST http://localhost:3000/api/mail/dispatch/<id>/send -H "x-api-key: <your-key>"
    ```
 
 #### How dispatches work
@@ -404,6 +411,9 @@ PostgreSQL is an **opt-in upgrade** controlled by `POSTGRES_ENABLED=true`.
    # POSTGRES_USER=postgres
    # POSTGRES_PASSWORD=your_password
    POSTGRES_SSL=false   # set true for hosted DBs (Neon, RDS, etc.)
+   POSTGRES_SSL_CA_PATH=
+   POSTGRES_SSL_CERT_PATH=
+   POSTGRES_SSL_KEY_PATH=
    ```
 
 3. Run migrations:
@@ -447,7 +457,7 @@ candidate position/workflow filtering, queue processing by status, and
 
 - **`POSTGRES_ENABLED is not true`** — set `POSTGRES_ENABLED=true` in `.env`
 - **Connection refused** — check host, port, and that PostgreSQL is running
-- **SSL required** — set `POSTGRES_SSL=true` for hosted databases
+- **SSL required** — set `POSTGRES_SSL=true` for hosted databases and provide CA/cert/key paths when required by your provider
 - **Permission denied** — ensure the user has `CREATE TABLE` permissions on the database
 
 ---
@@ -485,17 +495,17 @@ npm run worker:parser:watch
 # Enqueue a parsing job (worker processes it asynchronously)
 curl -s -X POST http://localhost:3000/api/documents/ingest \
   -H "Content-Type: application/json" \
-  -H "x-role: hr" \
+  -H "x-api-key: <your-key>" \
   -d '{"candidateId":"<uuid>","fileName":"resume.pdf","mimeType":"application/pdf","storageRef":"/uploads/resume.pdf"}'
 
 # Enqueue AND process immediately (runNow=true — useful in development)
 curl -s -X POST http://localhost:3000/api/documents/ingest \
   -H "Content-Type: application/json" \
-  -H "x-role: hr" \
+  -H "x-api-key: <your-key>" \
   -d '{"candidateId":"<uuid>","fileName":"cv.txt","mimeType":"text/plain","text":"Alice Smith\nalice@example.com\n5 years experience...","runNow":true}'
 
 # Poll for result
-curl -s http://localhost:3000/api/documents/<jobId>/status -H "x-role: viewer"
+curl -s http://localhost:3000/api/documents/<jobId>/status -H "x-api-key: <your-key>"
 ```
 
 #### Parsed fields
@@ -521,7 +531,7 @@ for human review.
 ```bash
 curl -s -X PATCH http://localhost:3000/api/candidates/<id>/enrich \
   -H "Content-Type: application/json" \
-  -H "x-role: hr" \
+  -H "x-api-key: <your-key>" \
   -d '{"fields":{"educationalAttainment":"College Graduate","workExperience":"1-3 years"},"confidence":"medium"}'
 ```
 
@@ -588,6 +598,7 @@ GMAIL_POLL_INTERVAL_MS=60000
 
 # Base URL of the hiring-automation API server
 API_BASE_URL=http://localhost:3000
+# Use https:// for non-local hosts.
 
 # API key (optional; must match HR_API_KEY in server .env if set)
 API_KEY=
@@ -646,4 +657,3 @@ Application for Administrative Aide IV (Clerk II) [HA:<uuid>]
 - The worker does **not** log extracted document contents — only file metadata and classification results.
 - Use a dedicated Google account/project for the integration in production.
 - Revoke app access via Google Account → Security → Third-party apps if needed.
-

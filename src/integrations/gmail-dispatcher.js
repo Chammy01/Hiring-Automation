@@ -26,6 +26,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const { config } = require('../config');
 const { updateStore, readStore } = require('../store');
+const { encryptText, decryptText } = require('../security');
 
 // googleapis is a prod dependency — loaded lazily to keep tests fast
 let google;
@@ -137,7 +138,21 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function sanitizeDispatch(dispatch) {
+  if (!dispatch) return null;
+  const { body, bodyEncrypted, ...rest } = dispatch;
+  return {
+    ...rest,
+    hasBody: Boolean(bodyEncrypted || body)
+  };
+}
+
 function getDispatch(id) {
+  const dispatch = readStore().outboundDispatches.find((d) => d.id === id) || null;
+  return sanitizeDispatch(dispatch);
+}
+
+function getDispatchRaw(id) {
   return readStore().outboundDispatches.find((d) => d.id === id) || null;
 }
 
@@ -180,7 +195,7 @@ function enqueueDispatch(opts = {}) {
     to: opts.to,
     from,
     subject,
-    body,
+    bodyEncrypted: encryptText(body),
     templateKey: opts.templateKey || null,
     templateVars: vars,
     status: 'queued',
@@ -204,7 +219,7 @@ function enqueueDispatch(opts = {}) {
     return state;
   });
 
-  return { dispatch };
+  return { dispatch: sanitizeDispatch(dispatch) };
 }
 
 // ─── Send (with retry logic) ──────────────────────────────────────────────────
@@ -217,13 +232,13 @@ function enqueueDispatch(opts = {}) {
  * @returns {Promise<object>} The updated dispatch record
  */
 async function sendDispatch(dispatchId) {
-  const dispatch = getDispatch(dispatchId);
+  const dispatch = getDispatchRaw(dispatchId);
   if (!dispatch) {
     throw new Error(`Dispatch not found: ${dispatchId}`);
   }
 
   if (dispatch.status === 'sent') {
-    return dispatch;
+    return sanitizeDispatch(dispatch);
   }
 
   const maxRetries = dispatch.maxRetries != null ? dispatch.maxRetries : config.gmailDispatchMaxRetries;
@@ -243,9 +258,10 @@ async function sendDispatch(dispatchId) {
   }
 
   let lastError;
+  const bodyText = decryptText(dispatch.bodyEncrypted || dispatch.body || '');
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const providerMsgId = await sendViaGmail(dispatch.to, dispatch.from, dispatch.subject, dispatch.body);
+      const providerMsgId = await sendViaGmail(dispatch.to, dispatch.from, dispatch.subject, bodyText);
       updateDispatch(dispatchId, {
         status: 'sent',
         providerMsgId,
@@ -310,7 +326,7 @@ function listDispatches(filters = {}) {
     if (filters.status && d.status !== filters.status) return false;
     if (filters.candidateId && d.candidateId !== filters.candidateId) return false;
     return true;
-  });
+  }).map(sanitizeDispatch);
 }
 
 // ─── Exports ──────────────────────────────────────────────────────────────────

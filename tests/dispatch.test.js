@@ -56,7 +56,7 @@ test('enqueueDispatch creates a queued dispatch record', () => {
   assert.equal(dispatch.status, 'queued');
   assert.equal(dispatch.to, 'alice@example.com');
   assert.equal(dispatch.subject, 'Welcome Alice');
-  assert.equal(dispatch.body, 'Your application is received.');
+  assert.equal(dispatch.hasBody, true);
 });
 
 test('enqueueDispatch stores dispatch in the store', () => {

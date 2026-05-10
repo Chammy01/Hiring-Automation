@@ -9,10 +9,10 @@ const db = require('../postgres');
 
 async function create(dispatch) {
   const res = await db.query(
-    `INSERT INTO outbound_dispatches
-       (id, candidate_id, to_email, from_email, subject, body,
-        template_key, template_vars, status, provider,
-        retry_count, max_retries, queued_at)
+     `INSERT INTO outbound_dispatches
+       (id, candidate_id, to_email, from_email, subject, body_encrypted,
+         template_key, template_vars, status, provider,
+         retry_count, max_retries, queued_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING *`,
     [
@@ -21,7 +21,7 @@ async function create(dispatch) {
       dispatch.toEmail,
       dispatch.fromEmail,
       dispatch.subject,
-      dispatch.body,
+      dispatch.bodyEncrypted,
       dispatch.templateKey || null,
       JSON.stringify(dispatch.templateVars || {}),
       dispatch.status || 'queued',

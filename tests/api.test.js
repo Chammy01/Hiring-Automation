@@ -2,13 +2,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const { app } = require('../src/server');
+const { config } = require('../src/config');
 const { resetStore } = require('./helpers');
 
 function hr(requestBuilder) {
-  return requestBuilder.set('x-role', 'hr');
+  return requestBuilder.set('x-api-key', 'test-hr-key');
 }
 
-test.beforeEach(() => resetStore());
+function admin(requestBuilder) {
+  return requestBuilder.set('x-api-key', 'test-admin-key');
+}
+
+test.beforeEach(() => {
+  resetStore();
+  config.hrApiKeys = new Map([
+    ['test-hr-key', 'hr'],
+    ['test-admin-key', 'admin']
+  ]);
+});
 test.after(() => resetStore());
 
 test('health endpoint is reachable', async () => {
@@ -243,4 +254,19 @@ test('delete endpoint permanently removes a candidate', async () => {
 test('delete endpoint returns 404 for unknown candidate', async () => {
   const res = await hr(request(app).delete('/api/candidates/00000000-0000-0000-0000-000000000000'));
   assert.equal(res.status, 404);
+});
+
+test('auth returns 401 for invalid API key when auth mapping is configured', async () => {
+  const res = await request(app)
+    .get('/api/candidates')
+    .set('x-api-key', 'invalid-key');
+  assert.equal(res.status, 401);
+});
+
+test('backup endpoint requires admin role', async () => {
+  const asHr = await hr(request(app).get('/api/backup'));
+  assert.equal(asHr.status, 403);
+
+  const asAdmin = await admin(request(app).get('/api/backup'));
+  assert.equal(asAdmin.status, 200);
 });

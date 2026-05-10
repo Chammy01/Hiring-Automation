@@ -63,26 +63,44 @@ const {
 
 const app = express();
 
+function setSecurityHeaders(req, res, next) {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; " +
+    "base-uri 'self'; form-action 'self'"
+  );
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (config.runtime.isProduction && req.secure) {
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  }
+  return next();
+}
+
+app.use(setSecurityHeaders);
+
 // ─── CORS ─────────────────────────────────────────────────────────────────────
-// Restrict to configured origins in production; fall back to permissive in dev.
-const allowedOriginsRaw = config.allowedOrigins || '';
-const allowedOrigins = allowedOriginsRaw
-  ? allowedOriginsRaw.split(',').map((o) => o.trim()).filter(Boolean)
-  : [];
+const allowedOrigins = config.allowedOriginsList || [];
 
 app.use(cors(
-  allowedOrigins.length > 0
-    ? {
-        origin: (origin, callback) => {
-          // Allow same-origin / non-browser requests (no Origin header)
-          if (!origin || allowedOrigins.includes(origin)) {
-            return callback(null, true);
-          }
-          return callback(new Error(`CORS: origin "${origin}" is not allowed`));
-        },
-        credentials: true
+  {
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
       }
-    : undefined // permissive (dev/test)
+      if (allowedOrigins.length > 0 && allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      if (!config.runtime.isProduction && allowedOrigins.length === 0) {
+        return callback(null, true);
+      }
+      return callback(new Error('CORS origin is not allowed'));
+    },
+    credentials: true
+  }
 ));
 
 // ─── Body size limits ─────────────────────────────────────────────────────────
@@ -128,13 +146,28 @@ function createRateLimiter({ windowMs, max }) {
 }
 
 function requireApiKey(req, res, next) {
-  if (!config.hrApiKey) {
+  const provided = String(req.headers['x-api-key'] || '').trim();
+  const role = config.hrApiKeys.get(provided);
+
+  if (role) {
+    req.auth = { role, actor: `apiKey:${role}` };
     return next();
   }
-  if (req.headers['x-api-key'] !== config.hrApiKey) {
+
+  if (config.runtime.isTest && !provided) {
+    req.auth = { role: config.localAuthRole || 'hr', actor: 'local:test' };
+    return next();
+  }
+
+  if (config.runtime.isLocalDev && !config.hrApiKeys.size) {
+    req.auth = { role: config.localAuthRole || 'hr', actor: 'local:dev' };
+    return next();
+  }
+
+  if (!provided) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  return next();
+  return res.status(401).json({ error: 'Unauthorized' });
 }
 
 function secure(permission) {
@@ -170,7 +203,8 @@ const docsContentSchema = z.object({
     z.object({
       fileName: z.string(),
       text: z.string().optional(),
-      mimeType: z.string().optional()
+      mimeType: z.string().optional(),
+      sizeBytes: z.number().int().nonnegative().optional()
     })
   )
 });
@@ -659,15 +693,16 @@ app.get('/api/email-events', secure('read:email'), (req, res) => {
   return res.json({ items, total });
 });
 
-app.get('/api/backup', secureWrite('write:backup'), (_req, res) => {
-  res.json(exportBackup());
+app.get('/api/backup', secure('write:backup'), (req, res) => {
+  res.json(exportBackup({ actor: req.auth && req.auth.actor, role: req.auth && req.auth.role }));
 });
 
 app.post('/api/restore', secureWrite('write:backup'), (req, res) => {
   try {
-    const restored = importBackup(req.body || {});
+    const restored = importBackup(req.body || {}, { actor: req.auth && req.auth.actor, role: req.auth && req.auth.role });
     return res.json({ restored });
   } catch (error) {
+    console.error('[server] restore failed:', error.message);
     return res.status(400).json({ error: error.message });
   }
 });
@@ -761,6 +796,7 @@ const ingestDocSchema = z.object({
   fileName: z.string().min(1),
   mimeType: z.string().optional(),
   text: z.string().optional(),
+  sizeBytes: z.number().int().nonnegative().optional(),
   storageRef: z.string().optional(),
   runNow: z.boolean().optional()
 });
@@ -891,11 +927,11 @@ const webhookSchema = z.object({
   secret: z.string().optional()
 });
 
-app.get('/api/webhooks', secure('read:dashboard'), (_req, res) => {
+app.get('/api/webhooks', secure('manage:webhooks'), (_req, res) => {
   res.json({ items: listWebhooks() });
 });
 
-app.post('/api/webhooks', secureWrite('write:candidates'), (req, res) => {
+app.post('/api/webhooks', secureWrite('manage:webhooks'), (req, res) => {
   const parsed = webhookSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -908,7 +944,7 @@ app.post('/api/webhooks', secureWrite('write:candidates'), (req, res) => {
   }
 });
 
-app.delete('/api/webhooks/:id', secureWrite('write:candidates'), (req, res) => {
+app.delete('/api/webhooks/:id', secureWrite('manage:webhooks'), (req, res) => {
   try {
     deleteWebhook(req.params.id);
     return res.json({ deleted: true });
@@ -937,9 +973,10 @@ function createServer() {
 // Catches errors thrown/passed from async route handlers.
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
-  console.error('[server] Unhandled error:', err.message || err);
+  console.error('[server] Unhandled error:', err && err.stack ? err.stack : (err.message || err));
   const status = err.status || err.statusCode || 500;
-  res.status(status).json({ error: err.message || 'Internal server error' });
+  const isClientError = status >= 400 && status < 500;
+  res.status(status).json({ error: isClientError ? (err.message || 'Request failed') : 'Internal server error' });
 });
 
 if (require.main === module) {

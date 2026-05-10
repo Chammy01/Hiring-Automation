@@ -55,9 +55,15 @@ function formatDate(iso) {
 
 // ── API ────────────────────────────────────────────────────────
 async function api(path, options = {}) {
+  const apiKey = window.localStorage.getItem('HR_API_KEY') || '';
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {})
+  };
+  if (apiKey) headers['x-api-key'] = apiKey;
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', 'x-role': 'hr' },
-    ...options
+    ...options,
+    headers
   });
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));

@@ -1,23 +1,48 @@
 require('dotenv').config();
 
 const DEV_DEFAULT_ENCRYPTION_KEY = 'dev-local-encryption-key-change-this-dev-local-encryption-key';
+const isTest = process.env.NODE_ENV === 'test';
+const isProduction = process.env.NODE_ENV === 'production';
+const isLocalDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+
+function parseApiKeys(raw) {
+  const map = new Map();
+  if (!raw) return map;
+  for (const pair of String(raw).split(',')) {
+    const trimmed = pair.trim();
+    if (!trimmed) continue;
+    const [key, roleRaw] = trimmed.split(':');
+    const token = String(key || '').trim();
+    const role = String(roleRaw || 'hr').trim().toLowerCase();
+    if (token) map.set(token, role || 'hr');
+  }
+  return map;
+}
+
+function parseCsv(raw) {
+  return String(raw || '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
 
 const config = {
   port: Number(process.env.PORT || 3000),
   dataFile: process.env.DATA_FILE || 'data/store.json',
   defaultDeadline: process.env.DOCUMENT_DEADLINE || '',
   fromEmail: process.env.FROM_EMAIL || 'hr@company.local',
-  hrApiKey: process.env.HR_API_KEY || '',
-  // When HR_API_KEY is set, authenticated requests get this role instead of
-  // reading the role from the (attacker-controlled) request header.
-  // Defaults to 'hr' so a single shared API key grants full HR access.
+  hrApiKey: String(process.env.HR_API_KEY || '').trim(),
   hrDefaultRole: process.env.HR_DEFAULT_ROLE || 'hr',
-  roleHeader: process.env.ROLE_HEADER || 'x-role',
-  // Comma-separated list of allowed CORS origins. Empty = dev permissive mode.
+  hrApiKeys: parseApiKeys(process.env.HR_API_KEYS || ''),
+  // Comma-separated list of allowed CORS origins.
   allowedOrigins: process.env.ALLOWED_ORIGINS || '',
+  allowedOriginsList: parseCsv(process.env.ALLOWED_ORIGINS || ''),
   encryptionKey:
     process.env.ENCRYPTION_KEY ||
     DEV_DEFAULT_ENCRYPTION_KEY,
+  webhookAllowedDomains: parseCsv(process.env.WEBHOOK_ALLOWED_DOMAINS || '').map((d) => d.toLowerCase()),
+  webhookTimeoutMs: Number(process.env.WEBHOOK_TIMEOUT_MS || 5000),
+  localAuthRole: String(process.env.LOCAL_AUTH_ROLE || 'hr').toLowerCase(),
   mailboxAddress: process.env.MAILBOX_ADDRESS || 'applications@company.local',
   googleSheetsEnabled: String(process.env.GOOGLE_SHEETS_ENABLED || '').toLowerCase() === 'true',
   googleSheetsCredentialsJson: process.env.GOOGLE_SHEETS_CREDENTIALS_JSON || '',
@@ -33,6 +58,9 @@ const config = {
   postgresUser: process.env.POSTGRES_USER || 'postgres',
   postgresPassword: process.env.POSTGRES_PASSWORD || '',
   postgresSsl: String(process.env.POSTGRES_SSL || '').toLowerCase() === 'true',
+  postgresSslCaPath: process.env.POSTGRES_SSL_CA_PATH || '',
+  postgresSslCertPath: process.env.POSTGRES_SSL_CERT_PATH || '',
+  postgresSslKeyPath: process.env.POSTGRES_SSL_KEY_PATH || '',
 
   // Gmail outbound dispatcher (optional — skips send when not configured)
   gmailDispatchEnabled: String(process.env.GMAIL_DISPATCH_ENABLED || '').toLowerCase() === 'true',
@@ -45,28 +73,46 @@ const config = {
   // OCR / document parsing worker
   ocrEnabled: String(process.env.OCR_ENABLED || '').toLowerCase() === 'true',
   ocrWorkerConcurrency: Number(process.env.OCR_WORKER_CONCURRENCY || 2),
-  ocrWorkerPollMs: Number(process.env.OCR_WORKER_POLL_MS || 5000)
+  ocrWorkerPollMs: Number(process.env.OCR_WORKER_POLL_MS || 5000),
+
+  runtime: {
+    isTest,
+    isProduction,
+    isLocalDev
+  }
 };
 
-// Warn if running outside test mode with the default insecure encryption key.
-if (
-  config.encryptionKey === DEV_DEFAULT_ENCRYPTION_KEY &&
-  process.env.NODE_ENV !== 'test'
-) {
-  console.warn(
-    '[config] WARNING: ENCRYPTION_KEY is set to the default insecure development value. ' +
-    'Set a strong, unique ENCRYPTION_KEY environment variable before deploying to production.'
+if (config.hrApiKey && config.hrApiKeys.size === 0) {
+  config.hrApiKeys.set(config.hrApiKey, String(config.hrDefaultRole || 'hr').toLowerCase());
+}
+
+if (!isTest && !config.hrApiKeys.size) {
+  throw new Error(
+    '[config] HR_API_KEY (or HR_API_KEYS) is required outside test environments. ' +
+    'Set it in environment variables (see .env.example).'
   );
 }
 
-// Warn when HR_API_KEY is not configured — the entire API is accessible without
-// authentication, which is a critical vulnerability in production deployments.
-if (!config.hrApiKey && process.env.NODE_ENV !== 'test') {
-  console.warn(
-    '[config] WARNING: HR_API_KEY is not set. ' +
-    'All API endpoints are accessible without authentication. ' +
-    'Set HR_API_KEY to a strong secret before deploying to production.'
+// Enforce strong encryption key outside local/test mode.
+if (
+  config.encryptionKey === DEV_DEFAULT_ENCRYPTION_KEY &&
+  !isTest &&
+  !isLocalDev
+) {
+  throw new Error(
+    '[config] ENCRYPTION_KEY must be set to a strong unique value outside local/test environments.'
   );
+}
+
+if (config.encryptionKey === DEV_DEFAULT_ENCRYPTION_KEY && !isTest) {
+  console.warn(
+    '[config] WARNING: ENCRYPTION_KEY is using the local development fallback. ' +
+    'Set a strong ENCRYPTION_KEY before deploying.'
+  );
+}
+
+if (isProduction && config.allowedOriginsList.length === 0) {
+  throw new Error('[config] ALLOWED_ORIGINS must be configured in production.');
 }
 
 module.exports = { config };

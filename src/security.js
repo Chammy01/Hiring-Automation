@@ -26,14 +26,10 @@ function decryptText(cipherText) {
 }
 
 function resolveRole(req) {
-  // When an API key is configured (production mode), the role is determined by
-  // the server-side HR_DEFAULT_ROLE setting rather than the request header,
-  // so callers cannot escalate privileges by injecting an arbitrary role.
-  // When no API key is configured (dev/test), fall back to the role header.
-  if (config.hrApiKey) {
-    return config.hrDefaultRole || 'hr';
+  if (req && req.auth && req.auth.role) {
+    return String(req.auth.role).toLowerCase();
   }
-  return String(req.headers[config.roleHeader] || 'viewer').toLowerCase();
+  return 'viewer';
 }
 
 function hasPermission(role, permission) {

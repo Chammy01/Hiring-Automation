@@ -19,6 +19,7 @@
  */
 
 const { config } = require('../config');
+const fs = require('node:fs');
 
 let pool = null;
 
@@ -32,11 +33,12 @@ function getPool() {
   }
 
   const { Pool } = require('pg');
+  const sslConfig = buildSslConfig();
 
   const poolConfig = config.postgresUrl
     ? {
         connectionString: config.postgresUrl,
-        ssl: config.postgresSsl ? { rejectUnauthorized: false } : false
+        ssl: sslConfig
       }
     : {
         host: config.postgresHost,
@@ -44,7 +46,7 @@ function getPool() {
         database: config.postgresDb,
         user: config.postgresUser,
         password: config.postgresPassword,
-        ssl: config.postgresSsl ? { rejectUnauthorized: false } : false,
+        ssl: sslConfig,
         max: 10,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 5000
@@ -57,6 +59,26 @@ function getPool() {
   });
 
   return pool;
+}
+
+function readIfExists(filePath) {
+  if (!filePath) return undefined;
+  if (!fs.existsSync(filePath)) {
+    throw new Error('SSL certificate file not found');
+  }
+  return fs.readFileSync(filePath, 'utf8');
+}
+
+function buildSslConfig() {
+  if (!config.postgresSsl) {
+    return false;
+  }
+  return {
+    rejectUnauthorized: config.runtime.isProduction,
+    ca: readIfExists(config.postgresSslCaPath),
+    cert: readIfExists(config.postgresSslCertPath),
+    key: readIfExists(config.postgresSslKeyPath)
+  };
 }
 
 async function query(sql, params = []) {
