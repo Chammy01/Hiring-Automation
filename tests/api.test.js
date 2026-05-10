@@ -3,6 +3,9 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const { app } = require('../src/server');
 const { config } = require('../src/config');
+const { readStore, updateStore } = require('../src/store');
+const { decryptText } = require('../src/security');
+const { WORKFLOW_STATES } = require('../src/constants');
 const { resetStore } = require('./helpers');
 
 function hr(requestBuilder) {
@@ -13,11 +16,16 @@ function admin(requestBuilder) {
   return requestBuilder.set('x-api-key', 'test-admin-key');
 }
 
+function editor(requestBuilder) {
+  return requestBuilder.set('x-api-key', 'test-editor-key');
+}
+
 test.beforeEach(() => {
   resetStore();
   config.hrApiKeys = new Map([
     ['test-hr-key', 'hr'],
-    ['test-admin-key', 'admin']
+    ['test-admin-key', 'admin'],
+    ['test-editor-key', 'editor']
   ]);
 });
 test.after(() => resetStore());
@@ -119,6 +127,8 @@ test('settings GET returns default app settings', async () => {
   assert.ok(typeof res.body.mailboxAddress === 'string');
   assert.ok(typeof res.body.companyName === 'string');
   assert.ok(typeof res.body.notifyNewApplication === 'boolean');
+  assert.ok(typeof res.body.followUpMessage === 'string');
+  assert.ok(typeof res.body.scheduleInterviewMessage === 'string');
 });
 
 test('settings PUT updates persisted values', async () => {
@@ -126,18 +136,94 @@ test('settings PUT updates persisted values', async () => {
     hiringDeadline: '2027-06-30T23:59:59.000Z',
     companyEmail: 'newhiring@example.com',
     companyName: 'Test Corp',
-    maxApplicationsPerRole: 50
+    maxApplicationsPerRole: 50,
+    followUpMessage: 'Hi {{candidateName}}',
+    scheduleInterviewMessage: 'Interview for {{candidateName}} at {{interviewTime}}'
   });
   assert.equal(updated.status, 200);
   assert.equal(updated.body.hiringDeadline, '2027-06-30T23:59:59.000Z');
   assert.equal(updated.body.companyEmail, 'newhiring@example.com');
   assert.equal(updated.body.companyName, 'Test Corp');
   assert.equal(updated.body.maxApplicationsPerRole, 50);
+  assert.equal(updated.body.followUpMessage, 'Hi {{candidateName}}');
+  assert.equal(updated.body.scheduleInterviewMessage, 'Interview for {{candidateName}} at {{interviewTime}}');
 
   const fetched = await hr(request(app).get('/api/settings'));
   assert.equal(fetched.status, 200);
   assert.equal(fetched.body.hiringDeadline, '2027-06-30T23:59:59.000Z');
   assert.equal(fetched.body.companyEmail, 'newhiring@example.com');
+  assert.equal(fetched.body.followUpMessage, 'Hi {{candidateName}}');
+  assert.equal(fetched.body.scheduleInterviewMessage, 'Interview for {{candidateName}} at {{interviewTime}}');
+});
+
+test('settings PUT allows editor role updates', async () => {
+  const updated = await editor(request(app).put('/api/settings')).send({
+    followUpMessage: 'Editor updated {{candidateName}}',
+    scheduleInterviewMessage: 'Editor schedule {{interviewDate}}'
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.followUpMessage, 'Editor updated {{candidateName}}');
+  assert.equal(updated.body.scheduleInterviewMessage, 'Editor schedule {{interviewDate}}');
+});
+
+test('follow-up email uses message template from settings with placeholder replacement', async () => {
+  await hr(request(app).put('/api/settings')).send({
+    followUpMessage: 'Hello {{candidateName}} for {{position}}. Missing:\n{{missingDocuments}}\nDeadline: {{deadline}}'
+  });
+
+  const intake = await hr(request(app).post('/api/applications/intake')).send({
+    fullName: 'Template Followup',
+    email: 'followup-template@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+  assert.equal(intake.status, 201);
+
+  const res = await hr(request(app).post(`/api/candidates/${intake.body.candidate.id}/follow-up`));
+  assert.equal(res.status, 200);
+
+  const dispatch = readStore().outboundDispatches.find((item) => item.candidateId === intake.body.candidate.id);
+  assert.ok(dispatch, 'follow-up dispatch should be queued');
+  const body = decryptText(dispatch.bodyEncrypted);
+  assert.ok(body.includes('Hello Template Followup for Administrative Aide IV (Clerk II).'));
+  assert.ok(body.includes('Missing:'));
+  assert.ok(!body.includes('{{candidateName}}'));
+});
+
+test('interview email uses message template from settings with placeholder replacement', async () => {
+  await hr(request(app).put('/api/settings')).send({
+    scheduleInterviewMessage: 'Hi {{candidateName}}, your {{position}} interview is {{interviewDate}} {{interviewTime}} at {{interviewLocation}}'
+  });
+
+  const intake = await hr(request(app).post('/api/applications/intake')).send({
+    fullName: 'Template Interview',
+    email: 'interview-template@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+  assert.equal(intake.status, 201);
+
+  updateStore((state) => {
+    const candidate = state.candidates.find((item) => item.id === intake.body.candidate.id);
+    candidate.workflowState = WORKFLOW_STATES.SHORTLISTED;
+    candidate.statusOfApplication = 'Shortlisted';
+    return state;
+  });
+
+  const interview = await hr(request(app).post(`/api/candidates/${intake.body.candidate.id}/interview`)).send({
+    date: '2026-08-01',
+    time: '09:30',
+    meetingLink: 'https://meet.example.com/interview-room'
+  });
+  assert.equal(interview.status, 200);
+
+  const events = await hr(request(app).get('/api/email-events'));
+  const scheduled = events.body.items.find(
+    (item) =>
+      item.candidateId === intake.body.candidate.id &&
+      item.subject === 'Initial Interview Schedule - Administrative Aide IV (Clerk II)'
+  );
+  assert.ok(scheduled, 'interview email event should exist');
+  assert.ok(scheduled.body.includes('Hi Template Interview, your Administrative Aide IV (Clerk II) interview is 2026-08-01 09:30 at https://meet.example.com/interview-room'));
+  assert.ok(!scheduled.body.includes('{{interviewDate}}'));
 });
 
 test('settings PUT rejects invalid email for companyEmail', async () => {

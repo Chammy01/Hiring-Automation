@@ -5,7 +5,7 @@ const { config } = require('./config');
 const { readStore, updateStore } = require('./store');
 const { nowIso } = require('./utils');
 
-const AUTH_ROLES = new Set(['admin', 'hr', 'developer']);
+const AUTH_ROLES = new Set(['admin', 'editor', 'hr', 'developer']);
 const PASSWORD_POLICY = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{12,}$/;
 
 function issueJwtToken(user) {
@@ -45,7 +45,7 @@ function sanitizeUser(user) {
 function validateRole(role) {
   const normalized = String(role || '').trim().toLowerCase();
   if (!AUTH_ROLES.has(normalized)) {
-    throw new Error('Role must be one of: admin, hr, developer');
+    throw new Error('Role must be one of: admin, editor, hr, developer');
   }
   return normalized;
 }

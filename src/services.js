@@ -8,7 +8,9 @@ const {
   SCORING_WEIGHTS,
   SCORING_MULTIPLIERS,
   EMAIL_STATUSES,
-  DEFAULT_TEMPLATES
+  DEFAULT_TEMPLATES,
+  DEFAULT_FOLLOW_UP_MESSAGE,
+  DEFAULT_SCHEDULE_INTERVIEW_MESSAGE
 } = require('./constants');
 const { queueOutboundDispatch, sendOutboundDispatch } = require('./integrations/gmail-dispatcher');
 const { config } = require('./config');
@@ -245,9 +247,20 @@ function transitionCandidate(candidate, toState) {
   candidate.updatedAt = nowIso();
 }
 
+function renderPlaceholders(template, vars = {}) {
+  return String(template || '').replace(
+    /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+    (_match, key) => String(vars[key] != null ? vars[key] : '')
+  );
+}
+
 function renderTemplate(templateKey, vars = {}, templates = DEFAULT_TEMPLATES) {
   const source = templates[templateKey] || '';
-  return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => String(vars[key] || ''));
+  return renderPlaceholders(source, vars);
+}
+
+function getConfiguredMessageTemplate(template, fallback) {
+  return String(template || '').trim() || fallback;
 }
 
 function acknowledgementTemplate(deadline, templates = DEFAULT_TEMPLATES) {
@@ -682,7 +695,7 @@ function updateScoringWeights(partialWeights = {}) {
 
 async function updateCandidateStatus(candidateId, action, payload = {}) {
   let result;
-  let followUpDispatchId = null;
+  let followUpEmailPayload = null;
 
   updateStore((state) => {
     const candidate = state.candidates.find((x) => x.id === candidateId);
@@ -697,6 +710,7 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
     } else if (action === 'scheduleInterview') {
       transitionCandidate(candidate, WORKFLOW_STATES.INTERVIEW_SCHEDULED);
       candidate.statusOfApplication = 'Interview Scheduled';
+      const appSettings = getStateAppSettings(state);
       candidate.interviewSchedule = {
         date: payload.date,
         time: payload.time,
@@ -704,16 +718,18 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
         venue: payload.venue || ''
       };
       const subject = `Initial Interview Schedule - ${candidate.position}`;
-      const body = renderTemplate(
-        'interviewInvite',
-        {
-          fullName: candidate.fullName,
-          date: payload.date,
-          time: payload.time,
-          location: payload.meetingLink || payload.venue || ''
-        },
-        state.templates
+      const interviewLocation = payload.meetingLink || payload.venue || '';
+      const scheduleInterviewMessage = getConfiguredMessageTemplate(
+        appSettings.scheduleInterviewMessage,
+        DEFAULT_SCHEDULE_INTERVIEW_MESSAGE
       );
+      const body = renderPlaceholders(scheduleInterviewMessage, {
+        candidateName: candidate.fullName,
+        position: candidate.position,
+        interviewDate: payload.date,
+        interviewTime: payload.time,
+        interviewLocation
+      });
       queueEmailEvent(state, {
         candidateId: candidate.id,
         to: candidate.email,
@@ -734,29 +750,29 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
       candidate.confirmedAttendance = true;
       addAuditLog(state, 'candidate.interview_confirmed', candidate.id);
     } else if (action === 'followUp') {
+      const appSettings = getStateAppSettings(state);
       const missing = Object.entries(candidate.documentStatus)
         .filter(([, status]) => status !== 'received')
         .map(([doc, status]) => `${doc} (${status})`);
-      const body = renderTemplate(
-        'missingDocs',
-        {
-          fullName: candidate.fullName,
-          deadline: getStateAppSettings(state).hiringDeadline,
-          missingList: missing.join('\n') || 'No missing items recorded.'
-        },
-        state.templates
+      const missingDocuments = missing.join('\n') || 'No missing items recorded.';
+      const followUpMessage = getConfiguredMessageTemplate(
+        appSettings.followUpMessage,
+        DEFAULT_FOLLOW_UP_MESSAGE
       );
+      const body = renderPlaceholders(followUpMessage, {
+        candidateName: candidate.fullName,
+        candidateEmail: candidate.email,
+        position: candidate.position,
+        deadline: appSettings.hiringDeadline,
+        missingDocuments
+      });
 
-      // New code to dispatch real email
-      const dispatch = queueOutboundDispatch({
+      followUpEmailPayload = {
         candidateId: candidate.id,
         to: candidate.email,
         subject: 'Follow-up: Application Requirements',
         body
-      });
-      sendOutboundDispatch(dispatch.dispatch.id).catch((e) => {
-        console.error("Failed to send follow-up email:", e.message);
-      });
+      };
 
       addAuditLog(state, 'candidate.follow_up_sent', candidate.id);
     } else {
@@ -769,15 +785,17 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
   });
 
   // Trigger the actual Gmail send outside the synchronous store update.
-  if (followUpDispatchId) {
+  if (followUpEmailPayload) {
     try {
-      console.log(`[followUp] Sending dispatch ${followUpDispatchId} via Gmail...`);
-      await sendDispatch(followUpDispatchId);
-      console.log(`[followUp] Dispatch ${followUpDispatchId} sent successfully.`);
+      const dispatch = queueOutboundDispatch(followUpEmailPayload);
+      const dispatchId = dispatch && dispatch.dispatch && dispatch.dispatch.id;
+      if (dispatchId) {
+        console.log(`[followUp] Sending dispatch ${dispatchId} via Gmail...`);
+        await sendOutboundDispatch(dispatchId);
+        console.log(`[followUp] Dispatch ${dispatchId} sent successfully.`);
+      }
     } catch (err) {
-      // Log the error but do not fail the HTTP response — the dispatch is
-      // persisted as 'failed' in outboundDispatches and can be retried.
-      console.error(`[followUp] Failed to send dispatch ${followUpDispatchId}:`, err.message);
+      console.error('[followUp] Failed to send dispatch:', err.message);
     }
   }
 
@@ -1304,6 +1322,8 @@ const ALLOWED_APP_SETTINGS_KEYS = [
   'maxUploadSizeMb',
   'notifyNewApplication',
   'reminderCadenceDays',
+  'followUpMessage',
+  'scheduleInterviewMessage',
   'careerPageBanner',
   'defaultJobVisibility',
   'dataRetentionDays'

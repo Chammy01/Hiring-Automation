@@ -107,6 +107,8 @@ All runtime settings are stored in `data/store.json` under `settings.appSettings
 | `maxUploadSizeMb` | positive number | Max file size per attachment (MB) | `10` |
 | `notifyNewApplication` | boolean | Send internal alert on new candidate | `true` |
 | `reminderCadenceDays` | positive integer | Days between follow-up reminders | `3` |
+| `followUpMessage` | string template | Message body for follow-up emails (`{{candidateName}}`, `{{position}}`, `{{deadline}}`, `{{missingDocuments}}`) | `"Dear {{candidateName}}, ..."` |
+| `scheduleInterviewMessage` | string template | Message body for interview scheduling emails (`{{candidateName}}`, `{{position}}`, `{{interviewDate}}`, `{{interviewTime}}`, `{{interviewLocation}}`) | `"Hello {{candidateName}}, ..."` |
 | `careerPageBanner` | string | Banner text shown on career page | `""` |
 | `defaultJobVisibility` | `"public"` / `"private"` / `"draft"` | Default visibility for new job posts | `"public"` |
 | `dataRetentionDays` | positive integer | Days before auto-archiving candidate records | `365` |
