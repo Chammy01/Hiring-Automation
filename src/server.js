@@ -779,9 +779,9 @@ app.post('/api/candidates/:id/interview', secureWrite('write:candidates'), (req,
   }
 });
 
-app.post('/api/candidates/:id/follow-up', secureWrite('write:candidates'), (req, res) => {
+app.post('/api/candidates/:id/follow-up', secureWrite('write:candidates'), async (req, res) => {
   try {
-    const candidate = updateCandidateStatus(req.params.id, 'followUp');
+    const candidate = await updateCandidateStatus(req.params.id, 'followUp');
     return res.json(candidate);
   } catch (error) {
     return res.status(400).json({ error: error.message });
@@ -1147,13 +1147,13 @@ const bulkActionSchema = z.object({
   reason: z.string().optional()
 });
 
-app.post('/api/candidates/bulk', secureWrite('write:candidates'), (req, res) => {
+app.post('/api/candidates/bulk', secureWrite('write:candidates'), async (req, res) => {
   const parsed = bulkActionSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   try {
-    const result = bulkCandidateAction(
+    const result = await bulkCandidateAction(
       parsed.data.ids,
       parsed.data.action,
       parsed.data.reason ? { reason: parsed.data.reason } : {}

@@ -679,8 +679,10 @@ function updateScoringWeights(partialWeights = {}) {
   return result;
 }
 
-function updateCandidateStatus(candidateId, action, payload = {}) {
+async function updateCandidateStatus(candidateId, action, payload = {}) {
   let result;
+  let followUpDispatchId = null;
+
   updateStore((state) => {
     const candidate = state.candidates.find((x) => x.id === candidateId);
     if (!candidate) {
@@ -743,13 +745,20 @@ function updateCandidateStatus(candidateId, action, payload = {}) {
         },
         state.templates
       );
-      queueEmailEvent(state, {
+
+      // Queue via the outbound dispatcher so the email is actually sent
+      // through Gmail (not just logged as "sent" in emailEvents).
+      const { dispatch } = enqueueDispatch({
         candidateId: candidate.id,
         to: candidate.email,
         subject: 'Follow-up: Application Requirements',
-        body
+        body,
+        templateKey: 'missingDocs'
       });
-      addAuditLog(state, 'candidate.follow_up_sent', candidate.id);
+      followUpDispatchId = dispatch.id;
+      console.log(`[followUp] Queued dispatch ${dispatch.id} for candidate ${candidate.id} <${candidate.email}>`);
+
+      addAuditLog(state, 'candidate.follow_up_sent', candidate.id, { dispatchId: dispatch.id });
     } else {
       throw new Error('Unsupported action');
     }
@@ -758,6 +767,20 @@ function updateCandidateStatus(candidateId, action, payload = {}) {
     result = candidate;
     return state;
   });
+
+  // Trigger the actual Gmail send outside the synchronous store update.
+  if (followUpDispatchId) {
+    try {
+      console.log(`[followUp] Sending dispatch ${followUpDispatchId} via Gmail...`);
+      await sendDispatch(followUpDispatchId);
+      console.log(`[followUp] Dispatch ${followUpDispatchId} sent successfully.`);
+    } catch (err) {
+      // Log the error but do not fail the HTTP response — the dispatch is
+      // persisted as 'failed' in outboundDispatches and can be retried.
+      console.error(`[followUp] Failed to send dispatch ${followUpDispatchId}:`, err.message);
+    }
+  }
+
   triggerGoogleSheetsSync(`candidate.${action}`);
   return result;
 }
@@ -1548,7 +1571,7 @@ function getCandidateNotes(candidateId) {
  * @param {object} [payload]
  * @returns {{ succeeded: string[], failed: Array<{id, error}> }}
  */
-function bulkCandidateAction(ids, action, payload = {}) {
+async function bulkCandidateAction(ids, action, payload = {}) {
   if (!Array.isArray(ids) || ids.length === 0) {
     throw new Error('ids must be a non-empty array');
   }
@@ -1562,7 +1585,7 @@ function bulkCandidateAction(ids, action, payload = {}) {
 
   for (const id of ids) {
     try {
-      updateCandidateStatus(id, action, payload);
+      await updateCandidateStatus(id, action, payload);
       succeeded.push(id);
     } catch (err) {
       failed.push({ id, error: err.message });
