@@ -93,6 +93,11 @@ if (!isTest && !config.hrApiKeys.size) {
   );
 }
 
+// Only load .env file in local development, not in production/Railway
+if (process.env.NODE_ENV !== 'production' && !process.env.RAILWAY_ENVIRONMENT_NAME && !process.env.RENDER) {
+  require('dotenv').config();
+}
+
 // Enforce strong encryption key outside local/test mode.
 if (
   config.encryptionKey === DEV_DEFAULT_ENCRYPTION_KEY &&
