@@ -58,41 +58,23 @@ let _oAuth2Client = null;
 function getOAuthClient() {
   if (_oAuth2Client) return _oAuth2Client;
 
-  if (!google) {
-    throw new Error('googleapis package is not available — install it or disable GMAIL_DISPATCH_ENABLED');
+  // Use the persistent volume path for maximum security
+  const credentialsPath = config.gmailCredentialsPath; // e.g., /app/data/credentials.json
+  const tokenPath = config.gmailTokenPath;             // e.g., /app/data/gmail-token.json
+
+  if (!fs.existsSync(credentialsPath) || !fs.existsSync(tokenPath)) {
+    throw new Error('Security Error: Gmail OAuth files missing from persistent volume.');
   }
 
-  // 1. Resolve Credentials (Variable first, then File)
-  let credentials;
-  if (config.googleSheetsCredentialsJson) { // Using the same variable name pattern as your Sheets integration
-    credentials = JSON.parse(config.googleSheetsCredentialsJson);
-  } else if (fs.existsSync(config.gmailCredentialsPath)) {
-    credentials = JSON.parse(fs.readFileSync(config.gmailCredentialsPath, 'utf8'));
-  } else {
-    throw new Error('Gmail credentials not found in environment variables or file system.');
-  }
+  const credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+  const token = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
 
   const { client_id, client_secret, redirect_uris } = credentials.installed || credentials.web;
   const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
-
-  // 2. Resolve Token (Variable first, then File)
-  let token;
-  if (process.env.GMAIL_TOKEN_JSON) {
-    token = JSON.parse(process.env.GMAIL_TOKEN_JSON);
-  } else if (fs.existsSync(config.gmailTokenPath)) {
-    token = JSON.parse(fs.readFileSync(config.gmailTokenPath, 'utf8'));
-  } else {
-    throw new Error('Gmail token not found in environment variables or file system.');
-  }
-
+  
   oAuth2Client.setCredentials(token);
   _oAuth2Client = oAuth2Client;
   return oAuth2Client;
-}
-
-/** Reset cached client (e.g. after token rotation in tests). */
-function resetOAuthClient() {
-  _oAuth2Client = null;
 }
 
 // ─── Build RFC 2822 email and base64url-encode it ────────────────────────────
