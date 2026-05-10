@@ -247,16 +247,20 @@ function transitionCandidate(candidate, toState) {
   candidate.updatedAt = nowIso();
 }
 
-function renderTemplate(templateKey, vars = {}, templates = DEFAULT_TEMPLATES) {
-  const source = templates[templateKey] || '';
-  return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => String(vars[key] || ''));
-}
-
-function renderMessageTemplate(template, vars = {}) {
+function renderPlaceholders(template, vars = {}) {
   return String(template || '').replace(
     /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
     (_match, key) => String(vars[key] != null ? vars[key] : '')
   );
+}
+
+function renderTemplate(templateKey, vars = {}, templates = DEFAULT_TEMPLATES) {
+  const source = templates[templateKey] || '';
+  return renderPlaceholders(source, vars);
+}
+
+function getConfiguredMessageTemplate(template, fallback) {
+  return String(template || '').trim() || fallback;
 }
 
 function acknowledgementTemplate(deadline, templates = DEFAULT_TEMPLATES) {
@@ -715,9 +719,11 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
       };
       const subject = `Initial Interview Schedule - ${candidate.position}`;
       const interviewLocation = payload.meetingLink || payload.venue || '';
-      const scheduleInterviewMessage = String(appSettings.scheduleInterviewMessage || '').trim()
-        || DEFAULT_SCHEDULE_INTERVIEW_MESSAGE;
-      const body = renderMessageTemplate(scheduleInterviewMessage, {
+      const scheduleInterviewMessage = getConfiguredMessageTemplate(
+        appSettings.scheduleInterviewMessage,
+        DEFAULT_SCHEDULE_INTERVIEW_MESSAGE
+      );
+      const body = renderPlaceholders(scheduleInterviewMessage, {
         candidateName: candidate.fullName,
         position: candidate.position,
         interviewDate: payload.date,
@@ -749,9 +755,11 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
         .filter(([, status]) => status !== 'received')
         .map(([doc, status]) => `${doc} (${status})`);
       const missingDocuments = missing.join('\n') || 'No missing items recorded.';
-      const followUpMessage = String(appSettings.followUpMessage || '').trim()
-        || DEFAULT_FOLLOW_UP_MESSAGE;
-      const body = renderMessageTemplate(followUpMessage, {
+      const followUpMessage = getConfiguredMessageTemplate(
+        appSettings.followUpMessage,
+        DEFAULT_FOLLOW_UP_MESSAGE
+      );
+      const body = renderPlaceholders(followUpMessage, {
         candidateName: candidate.fullName,
         candidateEmail: candidate.email,
         position: candidate.position,
