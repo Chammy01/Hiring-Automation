@@ -335,11 +335,16 @@ const interviewSchema = z.object({
   date: z.string().min(1),
   time: z.string().min(1),
   meetingLink: z.string().optional(),
-  venue: z.string().optional()
+  venue: z.string().optional(),
+  message: z.string().min(1).optional()
 });
 
 const rejectSchema = z.object({
   reason: z.string().min(1)
+});
+
+const followUpSchema = z.object({
+  message: z.string().min(1).optional()
 });
 
 const templateSchema = z.object({
@@ -782,8 +787,12 @@ app.post('/api/candidates/:id/interview', secureWrite('write:candidates'), (req,
 });
 
 app.post('/api/candidates/:id/follow-up', secureWrite('write:candidates'), async (req, res) => {
+  const parsed = followUpSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
   try {
-    const candidate = await updateCandidateStatus(req.params.id, 'followUp');
+    const candidate = await updateCandidateStatus(req.params.id, 'followUp', parsed.data);
     return res.json(candidate);
   } catch (error) {
     return res.status(400).json({ error: error.message });
@@ -962,6 +971,13 @@ app.put('/api/settings', secureWrite('write:candidates'), (req, res) => {
   const parsed = appSettingsSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const role = String((req.auth && req.auth.role) || '').toLowerCase();
+  const isMessageUpdate =
+    Object.prototype.hasOwnProperty.call(parsed.data, 'followUpMessage') ||
+    Object.prototype.hasOwnProperty.call(parsed.data, 'scheduleInterviewMessage');
+  if (isMessageUpdate && !['admin', 'developer', 'hr'].includes(role)) {
+    return res.status(403).json({ error: 'Only admin, developer, and hr can update follow-up/interview message templates' });
   }
   try {
     const updated = updateAppSettings(parsed.data);

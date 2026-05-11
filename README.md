@@ -45,7 +45,7 @@ Open-source hiring workflow automation with intake, compliance validation, extra
 - Status updates reflected in workflow + sheet export.
 
 ### Phase 8 — Security, Audit, Reliability
-- Role-based access control (`viewer`, `hr`, `admin`) resolved server-side from API key identity.
+- Role-based access control (`viewer`, `editor`, `hr`, `developer`, `admin`) resolved server-side from API key identity.
 - Mandatory API key enforcement outside test (`HR_API_KEY` or `HR_API_KEYS`).
 - Encrypted email body storage (AES-256-GCM).
 - Full audit trail for workflow and configuration actions.
@@ -67,9 +67,10 @@ Open-source hiring workflow automation with intake, compliance validation, extra
 - UI: Vanilla HTML/CSS/JS
 - Security primitives: Node crypto (AES-256-GCM)
 
-## App Settings (Admin-Editable)
+## App Settings (Role-Based Editable)
 
-All runtime settings are stored in `data/store.json` under `settings.appSettings` and are fully editable without changing code.
+All runtime settings are stored in `data/store.json` under `settings.appSettings` and are editable without changing code.
+`followUpMessage` and `scheduleInterviewMessage` are restricted to `admin`, `developer`, and `hr` roles.
 
 ### Where to edit
 
@@ -121,6 +122,7 @@ The PUT endpoint validates:
 - Numeric fields (`maxApplicationsPerRole`, `maxUploadSizeMb`, etc.) must be positive numbers or non-negative integers as appropriate.
 
 Invalid requests return HTTP 400 with a structured error body.
+Unauthorized template updates return HTTP 403.
 
 
 
@@ -310,7 +312,7 @@ Restart the app and it will regenerate `data/store.json` automatically.
 ## Key API Endpoints
 
 - `GET /api/settings` — read all app settings
-- `PUT /api/settings` — update one or more app settings
+- `PUT /api/settings` — update one or more app settings (`followUpMessage`/`scheduleInterviewMessage` require `admin|developer|hr`)
 - `POST /api/applications/intake`
 - `POST /api/email/inbound`
 - `POST /api/candidates/:id/documents`
@@ -323,8 +325,8 @@ Restart the app and it will regenerate `data/store.json` automatically.
 - `POST /api/candidates/:id/score`
 - `GET/POST /api/scoring/weights`
 - `POST /api/candidates/:id/shortlist`
-- `POST /api/candidates/:id/follow-up`
-- `POST /api/candidates/:id/interview`
+- `POST /api/candidates/:id/follow-up` (optional body: `{ "message": "..." }`)
+- `POST /api/candidates/:id/interview` (body: `date`, `time`, `meetingLink|venue`, optional `message`; supports rescheduling)
 - `POST /api/candidates/:id/confirm-interview`
 - `POST /api/candidates/:id/hire`
 - `POST /api/candidates/:id/reject`

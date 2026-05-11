@@ -155,6 +155,8 @@ function openModal(id) {
 function closeModal(id) {
   const overlay = document.getElementById(id);
   if (!overlay) return;
+  if (id === 'interview-modal') pendingInterviewId = null;
+  if (id === 'followup-modal') pendingFollowUpId = null;
   overlay.classList.remove('is-open');
   overlay.setAttribute('aria-hidden', 'true');
   openModals.delete(id);
@@ -290,6 +292,7 @@ let sortKey = '';
 let sortDir = 'asc';
 let activeCandidateId = null;
 let pendingInterviewId = null;
+let pendingFollowUpId = null;
 let pendingRejectIds = [];
 let showArchived = false;
 let pendingDeleteIds = [];
@@ -491,6 +494,35 @@ function rowActionBtn(action, id, iconSvg, label, extraClass = '') {
   return `<button class="action-btn ${extraClass}" data-action="${esc(action)}" data-id="${esc(id)}" aria-label="${esc(label)} candidate" title="${esc(label)}">${iconSvg}<span>${esc(label)}</span></button>`;
 }
 
+function canEditOutboundMessages() {
+  const role = String((currentUser && currentUser.role) || '').toLowerCase();
+  return ['admin', 'developer', 'hr'].includes(role);
+}
+
+async function openInterviewModal(candidateId) {
+  await ensureSettingsLoaded();
+  pendingInterviewId = candidateId;
+  const candidate = allCandidates.find((item) => item.id === candidateId);
+  const schedule = candidate && candidate.interviewSchedule ? candidate.interviewSchedule : {};
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('interview-date').value = schedule.date || today;
+  document.getElementById('interview-time').value = schedule.time || '10:00';
+  document.getElementById('interview-venue').value = schedule.venue || schedule.meetingLink || 'Main Office';
+  document.getElementById('interview-message').value =
+    (currentSettings && currentSettings.scheduleInterviewMessage) || '';
+  updateMessageTemplateEditability();
+  openModal('interview-modal');
+}
+
+async function openFollowUpModal(candidateId) {
+  await ensureSettingsLoaded();
+  pendingFollowUpId = candidateId;
+  document.getElementById('followup-message').value =
+    (currentSettings && currentSettings.followUpMessage) || '';
+  updateMessageTemplateEditability();
+  openModal('followup-modal');
+}
+
 function renderSkeletonRows(n = 5) {
   candidateRowsTbody.innerHTML = Array.from({ length: n }, () => `
     <tr class="skeleton-row">
@@ -617,14 +649,11 @@ candidateRowsTbody.addEventListener('click', async (e) => {
       await api(`/api/candidates/${id}/shortlist`, { method: 'POST' });
       toast('Candidate shortlisted', 'success');
     } else if (action === 'followup') {
-      await api(`/api/candidates/${id}/follow-up`, { method: 'POST' });
-      toast('Follow-up sent', 'success');
+      await openFollowUpModal(id);
+      btn.disabled = false;
+      return;
     } else if (action === 'interview') {
-      pendingInterviewId = id;
-      const today = new Date().toISOString().slice(0, 10);
-      document.getElementById('interview-date').value = today;
-      document.getElementById('interview-time').value = '10:00';
-      openModal('interview-modal');
+      await openInterviewModal(id);
       btn.disabled = false;
       return;
     } else if (action === 'hire') {
@@ -871,13 +900,14 @@ async function renderModalOverview(id) {
         try {
           if (act === 'score')     { await api(`/api/candidates/${id}/score`,     { method: 'POST' }); toast('Scored', 'success'); }
           if (act === 'shortlist') { await api(`/api/candidates/${id}/shortlist`, { method: 'POST' }); toast('Shortlisted', 'success'); }
-          if (act === 'followup')  { await api(`/api/candidates/${id}/follow-up`, { method: 'POST' }); toast('Follow-up sent', 'success'); }
+          if (act === 'followup')  {
+            await openFollowUpModal(id);
+            btn.disabled = false;
+            return;
+          }
           if (act === 'hire')      { await api(`/api/candidates/${id}/hire`,      { method: 'POST' }); toast('Hired!', 'success'); }
           if (act === 'interview') {
-            pendingInterviewId = id;
-            document.getElementById('interview-date').value = new Date().toISOString().slice(0, 10);
-            document.getElementById('interview-time').value = '10:00';
-            openModal('interview-modal');
+            await openInterviewModal(id);
             btn.disabled = false; return;
           }
           if (act === 'reject') {
@@ -1098,26 +1128,56 @@ document.getElementById('intake-submit').addEventListener('click', async () => {
 // ── INTERVIEW MODAL ────────────────────────────────────────────
 document.getElementById('interview-submit').addEventListener('click', async () => {
   if (!pendingInterviewId) return;
+  const candidateId = pendingInterviewId;
   const date  = document.getElementById('interview-date').value;
   const time  = document.getElementById('interview-time').value;
   const venue = document.getElementById('interview-venue').value || 'Main Office';
+  const message = document.getElementById('interview-message').value.trim();
   if (!date || !time) { toast('Please set date and time', 'warn'); return; }
   const btn = document.getElementById('interview-submit');
   btn.disabled = true;
   try {
-    await api(`/api/candidates/${pendingInterviewId}/interview`, {
+    const payload = { date, time, venue };
+    if (message) payload.message = message;
+    await api(`/api/candidates/${candidateId}/interview`, {
       method: 'POST',
-      body: JSON.stringify({ date, time, venue })
+      body: JSON.stringify(payload)
     });
     closeModal('interview-modal');
-    toast('Interview scheduled', 'success');
+    toast('Interview schedule saved and sent', 'success');
     await loadCandidates();
-    if (activeCandidateId === pendingInterviewId) renderModalOverview(pendingInterviewId);
+    if (activeCandidateId === candidateId) renderModalOverview(candidateId);
   } catch (err) {
     toast(err.message, 'error');
   } finally {
     btn.disabled = false;
     pendingInterviewId = null;
+  }
+});
+
+// ── FOLLOW-UP MODAL ────────────────────────────────────────────
+document.getElementById('followup-submit').addEventListener('click', async () => {
+  if (!pendingFollowUpId) return;
+  const candidateId = pendingFollowUpId;
+  const message = document.getElementById('followup-message').value.trim();
+  const btn = document.getElementById('followup-submit');
+  btn.disabled = true;
+  try {
+    const payload = {};
+    if (message) payload.message = message;
+    await api(`/api/candidates/${candidateId}/follow-up`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    closeModal('followup-modal');
+    toast('Follow-up sent', 'success');
+    await loadCandidates();
+    if (activeCandidateId === candidateId) renderModalOverview(candidateId);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    pendingFollowUpId = null;
   }
 });
 
@@ -1405,6 +1465,12 @@ document.addEventListener('keydown', (e) => {
 // ── SETTINGS PAGE ─────────────────────────────────────────────
 let currentSettings = null;
 
+async function ensureSettingsLoaded() {
+  if (currentSettings) return currentSettings;
+  currentSettings = await api('/api/settings');
+  return currentSettings;
+}
+
 function isoToDatetimeLocal(iso) {
   if (!iso) return '';
   try {
@@ -1451,9 +1517,13 @@ function applySettingsToForm(s) {
 }
 
 function updateMessageTemplateEditability() {
-  const editableRoles = new Set(['admin', 'editor']);
-  const isEditable = editableRoles.has(String((currentUser && currentUser.role) || '').toLowerCase());
-  const templateFields = ['s-followUpMessage', 's-scheduleInterviewMessage'];
+  const isEditable = canEditOutboundMessages();
+  const templateFields = [
+    's-followUpMessage',
+    's-scheduleInterviewMessage',
+    'followup-message',
+    'interview-message'
+  ];
   for (const id of templateFields) {
     const field = document.getElementById(id);
     if (!field) continue;

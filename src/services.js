@@ -708,6 +708,8 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
       candidate.statusOfApplication = 'Shortlisted';
       addAuditLog(state, 'candidate.shortlisted', candidate.id);
     } else if (action === 'scheduleInterview') {
+      const previousSchedule = candidate.interviewSchedule ? { ...candidate.interviewSchedule } : null;
+      const wasAlreadyScheduled = candidate.workflowState === WORKFLOW_STATES.INTERVIEW_SCHEDULED;
       transitionCandidate(candidate, WORKFLOW_STATES.INTERVIEW_SCHEDULED);
       candidate.statusOfApplication = 'Interview Scheduled';
       const appSettings = getStateAppSettings(state);
@@ -719,9 +721,14 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
       };
       const subject = `Initial Interview Schedule - ${candidate.position}`;
       const interviewLocation = payload.meetingLink || payload.venue || '';
-      const scheduleInterviewMessage = getConfiguredMessageTemplate(
+      const customScheduleMessage = String(payload.message || '').trim();
+      const scheduleInterviewFallback = getConfiguredMessageTemplate(
         appSettings.scheduleInterviewMessage,
         DEFAULT_SCHEDULE_INTERVIEW_MESSAGE
+      );
+      const scheduleInterviewMessage = getConfiguredMessageTemplate(
+        customScheduleMessage,
+        scheduleInterviewFallback
       );
       const body = renderPlaceholders(scheduleInterviewMessage, {
         candidateName: candidate.fullName,
@@ -736,7 +743,15 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
         subject,
         body
       });
-      addAuditLog(state, 'candidate.interview_scheduled', candidate.id, candidate.interviewSchedule);
+      addAuditLog(
+        state,
+        wasAlreadyScheduled ? 'candidate.interview_rescheduled' : 'candidate.interview_scheduled',
+        candidate.id,
+        {
+          previousSchedule,
+          nextSchedule: candidate.interviewSchedule
+        }
+      );
     } else if (action === 'hire') {
       transitionCandidate(candidate, WORKFLOW_STATES.HIRED);
       candidate.statusOfApplication = 'Hired';
@@ -755,9 +770,14 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
         .filter(([, status]) => status !== 'received')
         .map(([doc, status]) => `${doc} (${status})`);
       const missingDocuments = missing.join('\n') || 'No missing items recorded.';
-      const followUpMessage = getConfiguredMessageTemplate(
+      const customFollowUpMessage = String(payload.message || '').trim();
+      const followUpMessageFallback = getConfiguredMessageTemplate(
         appSettings.followUpMessage,
         DEFAULT_FOLLOW_UP_MESSAGE
+      );
+      const followUpMessage = getConfiguredMessageTemplate(
+        customFollowUpMessage,
+        followUpMessageFallback
       );
       const body = renderPlaceholders(followUpMessage, {
         candidateName: candidate.fullName,

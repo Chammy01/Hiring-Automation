@@ -641,11 +641,43 @@
               <label for="interview-venue">Venue</label>
               <input id="interview-venue" type="text" value="Main Office" placeholder="Main Office" />
             </div>
+            <div class="form-field">
+              <label for="interview-message">Interview Message</label>
+              <textarea id="interview-message" rows="6" placeholder="Hello {{candidateName}}, ..."></textarea>
+              <span class="form-hint">Placeholders: {{candidateName}}, {{position}}, {{interviewDate}}, {{interviewTime}}, {{interviewLocation}}</span>
+            </div>
           </form>
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" data-close-modal="interview-modal">Cancel</button>
-          <button class="btn" id="interview-submit" type="button">Schedule</button>
+          <button class="btn" id="interview-submit" type="button">Save & Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ FOLLOW-UP MODAL ═══ -->
+    <div class="modal-overlay" id="followup-modal" role="dialog" aria-modal="true" aria-labelledby="followup-modal-title" aria-hidden="true">
+      <div class="modal-panel modal-sm" role="document">
+        <div class="modal-header">
+          <h2 class="modal-title" id="followup-modal-title">Send Follow-up</h2>
+          <button class="modal-close" data-close-modal="followup-modal" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <form id="followup-form" class="form-stack" novalidate>
+            <div class="form-field">
+              <label for="followup-message">Follow-up Message</label>
+              <textarea id="followup-message" rows="8" placeholder="Dear {{candidateName}}, ..."></textarea>
+              <span class="form-hint">Placeholders: {{candidateName}}, {{position}}, {{deadline}}, {{missingDocuments}}, {{candidateEmail}}</span>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" data-close-modal="followup-modal">Cancel</button>
+          <button class="btn" id="followup-submit" type="button">Send Follow-up</button>
         </div>
       </div>
     </div>
