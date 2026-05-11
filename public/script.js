@@ -338,15 +338,19 @@ topbarMenuTrigger.addEventListener('click', () => {
   setTopbarMenuOpen(topbarMenu.hidden);
 });
 
-document.getElementById('mobile-search-trigger').addEventListener('click', () => {
+const mobileSearchTrigger = document.getElementById('mobile-search-trigger');
+const mobileRefreshTrigger = document.getElementById('mobile-refresh-trigger');
+const mobileLogoutTrigger = document.getElementById('mobile-logout-trigger');
+
+mobileSearchTrigger?.addEventListener('click', () => {
   setTopbarMenuOpen(false);
   openCmdPalette();
 });
-document.getElementById('mobile-refresh-trigger').addEventListener('click', () => {
+mobileRefreshTrigger?.addEventListener('click', () => {
   setTopbarMenuOpen(false);
   document.getElementById('refresh').click();
 });
-document.getElementById('mobile-logout-trigger').addEventListener('click', () => {
+mobileLogoutTrigger?.addEventListener('click', () => {
   setTopbarMenuOpen(false);
   document.getElementById('logout-btn').click();
 });
