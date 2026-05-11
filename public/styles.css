@@ -1887,8 +1887,7 @@ input[type="checkbox"] {
   *,
   *::before,
   *::after {
-    animation-duration: 0s !important;
-    animation-iteration-count: 1 !important;
+    animation: none !important;
     transition-duration: 0s !important;
     scroll-behavior: auto !important;
   }

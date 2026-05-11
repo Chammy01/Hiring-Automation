@@ -542,6 +542,7 @@ document.querySelectorAll('th.sortable').forEach((th) => {
 
 // ── CANDIDATE TABLE ────────────────────────────────────────────
 const candidateRowsTbody = document.getElementById('candidate-rows');
+const candidatesTable = document.getElementById('candidates-table');
 const mobileCandidateList = document.getElementById('mobile-candidate-list');
 const candidatesTableWrap = document.getElementById('candidates-table-wrap');
 const emptyState = document.getElementById('empty-state');
@@ -713,6 +714,7 @@ function updateEmptyState() {
   emptyState.hidden = hasRows;
   candidatesTableWrap.hidden = !hasRows;
   mobileCandidateList.hidden = !hasRows;
+  candidatesTable.hidden = !hasRows;
 }
 
 // ── BULK SELECT ────────────────────────────────────────────────
@@ -927,8 +929,9 @@ async function loadCandidates() {
   renderSkeletonCards();
   emptyState.hidden = true;
   candidatesTableWrap.hidden = false;
+  candidatesTable.hidden = false;
   mobileCandidateList.hidden = false;
-  candidatesTableWrap.setAttribute('aria-busy', 'true');
+  candidatesTable.setAttribute('aria-busy', 'true');
   mobileCandidateList.setAttribute('aria-busy', 'true');
 
   try {
@@ -940,7 +943,7 @@ async function loadCandidates() {
     candidateRowsTbody.innerHTML = `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--danger)">${esc(err.message)}</td></tr>`;
     mobileCandidateList.innerHTML = `<div class="mobile-candidate-card" style="color:var(--danger)">${esc(err.message)}</div>`;
   } finally {
-    candidatesTableWrap.removeAttribute('aria-busy');
+    candidatesTable.removeAttribute('aria-busy');
     mobileCandidateList.removeAttribute('aria-busy');
   }
 }
