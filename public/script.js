@@ -1163,7 +1163,8 @@ document.getElementById('followup-submit').addEventListener('click', async () =>
   const btn = document.getElementById('followup-submit');
   btn.disabled = true;
   try {
-    const payload = message ? { message } : {};
+    const payload = {};
+    if (message) payload.message = message;
     await api(`/api/candidates/${candidateId}/follow-up`, {
       method: 'POST',
       body: JSON.stringify(payload)

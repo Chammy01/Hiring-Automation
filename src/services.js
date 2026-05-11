@@ -722,9 +722,13 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
       const subject = `Initial Interview Schedule - ${candidate.position}`;
       const interviewLocation = payload.meetingLink || payload.venue || '';
       const customScheduleMessage = String(payload.message || '').trim();
+      const scheduleInterviewFallback = getConfiguredMessageTemplate(
+        appSettings.scheduleInterviewMessage,
+        DEFAULT_SCHEDULE_INTERVIEW_MESSAGE
+      );
       const scheduleInterviewMessage = getConfiguredMessageTemplate(
         customScheduleMessage,
-        getConfiguredMessageTemplate(appSettings.scheduleInterviewMessage, DEFAULT_SCHEDULE_INTERVIEW_MESSAGE)
+        scheduleInterviewFallback
       );
       const body = renderPlaceholders(scheduleInterviewMessage, {
         candidateName: candidate.fullName,
@@ -767,9 +771,13 @@ async function updateCandidateStatus(candidateId, action, payload = {}) {
         .map(([doc, status]) => `${doc} (${status})`);
       const missingDocuments = missing.join('\n') || 'No missing items recorded.';
       const customFollowUpMessage = String(payload.message || '').trim();
+      const followUpMessageFallback = getConfiguredMessageTemplate(
+        appSettings.followUpMessage,
+        DEFAULT_FOLLOW_UP_MESSAGE
+      );
       const followUpMessage = getConfiguredMessageTemplate(
         customFollowUpMessage,
-        getConfiguredMessageTemplate(appSettings.followUpMessage, DEFAULT_FOLLOW_UP_MESSAGE)
+        followUpMessageFallback
       );
       const body = renderPlaceholders(followUpMessage, {
         candidateName: candidate.fullName,
