@@ -136,6 +136,8 @@ let previousFocus = null;
 function openModal(id) {
   const overlay = document.getElementById(id);
   if (!overlay) return;
+  closeMobileSidebar({ restoreFocus: false });
+  setTopbarMenuOpen(false);
   previousFocus = document.activeElement;
   overlay.classList.add('is-open');
   overlay.setAttribute('aria-hidden', 'false');
@@ -189,9 +191,15 @@ document.addEventListener('click', (e) => {
   if (e.target.matches('.modal-overlay.is-open')) {
     closeModal(e.target.id);
   }
+  if (e.target === navBackdrop) {
+    closeMobileSidebar();
+  }
   const closeBtn = e.target.closest('[data-close-modal]');
   if (closeBtn) {
     closeModal(closeBtn.dataset.closeModal);
+  }
+  if (!topbarMenu.hidden && !e.target.closest('#topbar-menu') && !e.target.closest('#topbar-menu-trigger')) {
+    setTopbarMenuOpen(false);
   }
 });
 
@@ -205,6 +213,14 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const last = [...openModals].pop();
     if (last) { closeModal(last); return; }
+    if (!topbarMenu.hidden) {
+      setTopbarMenuOpen(false);
+      return;
+    }
+    if (isMobileViewport() && sidebar.classList.contains('mobile-open')) {
+      closeMobileSidebar();
+      return;
+    }
     closeCmdPalette();
   }
 });
@@ -234,20 +250,113 @@ applyTheme(localStorage.getItem('hf-theme') || 'dark');
 // ── SIDEBAR COLLAPSE ───────────────────────────────────────────
 const sidebar = document.getElementById('sidebar');
 const sidebarToggle = document.getElementById('sidebar-toggle');
+const navBackdrop = document.getElementById('nav-backdrop');
+const mobileNavTrigger = document.getElementById('mobile-nav-trigger');
+const topbarMenu = document.getElementById('topbar-menu');
+const topbarMenuTrigger = document.getElementById('topbar-menu-trigger');
+const mobileViewport = window.matchMedia('(max-width: 768px)');
+let sidebarReturnFocusElement = null;
 
-function setSidebarCollapsed(collapsed) {
+function isMobileViewport() {
+  return mobileViewport.matches;
+}
+
+function setSidebarCollapsed(collapsed, { persist = true } = {}) {
+  if (isMobileViewport()) return;
   sidebar.classList.toggle('collapsed', collapsed);
   sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
-  localStorage.setItem('hf-sidebar', collapsed ? '1' : '0');
+  sidebarToggle.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+  if (persist) localStorage.setItem('hf-sidebar', collapsed ? '1' : '0');
+}
+
+function openMobileSidebar(trigger = document.activeElement) {
+  if (!isMobileViewport()) return;
+  sidebarReturnFocusElement = trigger instanceof HTMLElement ? trigger : mobileNavTrigger;
+  sidebar.classList.add('mobile-open');
+  navBackdrop.hidden = false;
+  document.body.classList.add('nav-open');
+  sidebarToggle.setAttribute('aria-expanded', 'true');
+  sidebarToggle.setAttribute('aria-label', 'Close navigation');
+  mobileNavTrigger.setAttribute('aria-expanded', 'true');
+  setTopbarMenuOpen(false);
+  requestAnimationFrame(() => {
+    const focusTarget = sidebar.querySelector('.sidebar-nav-item.active') || sidebar.querySelector('.sidebar-nav-item');
+    focusTarget?.focus();
+  });
+}
+
+function closeMobileSidebar({ restoreFocus = true } = {}) {
+  if (!isMobileViewport()) return;
+  sidebar.classList.remove('mobile-open');
+  navBackdrop.hidden = true;
+  document.body.classList.remove('nav-open');
+  sidebarToggle.setAttribute('aria-expanded', 'false');
+  sidebarToggle.setAttribute('aria-label', 'Open navigation');
+  mobileNavTrigger.setAttribute('aria-expanded', 'false');
+  if (restoreFocus && sidebarReturnFocusElement) sidebarReturnFocusElement.focus();
+  sidebarReturnFocusElement = null;
+}
+
+function syncResponsiveChrome() {
+  if (isMobileViewport()) {
+    sidebar.classList.remove('collapsed');
+    closeMobileSidebar({ restoreFocus: false });
+    topbarMenuTrigger.hidden = false;
+    sidebarToggle.setAttribute('aria-label', 'Open navigation');
+    return;
+  }
+  navBackdrop.hidden = true;
+  document.body.classList.remove('nav-open');
+  sidebar.classList.remove('mobile-open');
+  topbarMenuTrigger.hidden = true;
+  setTopbarMenuOpen(false);
+  setSidebarCollapsed(localStorage.getItem('hf-sidebar') === '1', { persist: false });
+  mobileNavTrigger.setAttribute('aria-expanded', 'false');
+}
+
+function setTopbarMenuOpen(open) {
+  topbarMenu.hidden = !open;
+  topbarMenuTrigger.setAttribute('aria-expanded', String(open));
 }
 
 sidebarToggle.addEventListener('click', () => {
+  if (isMobileViewport()) {
+    if (sidebar.classList.contains('mobile-open')) closeMobileSidebar();
+    else openMobileSidebar(sidebarToggle);
+    return;
+  }
   const isCollapsed = sidebar.classList.contains('collapsed');
   setSidebarCollapsed(!isCollapsed);
 });
 
-// Init sidebar
-setSidebarCollapsed(localStorage.getItem('hf-sidebar') === '1');
+mobileNavTrigger.addEventListener('click', () => {
+  if (sidebar.classList.contains('mobile-open')) closeMobileSidebar();
+  else openMobileSidebar(mobileNavTrigger);
+});
+
+topbarMenuTrigger.addEventListener('click', () => {
+  setTopbarMenuOpen(topbarMenu.hidden);
+});
+
+const mobileSearchTrigger = document.getElementById('mobile-search-trigger');
+const mobileRefreshTrigger = document.getElementById('mobile-refresh-trigger');
+const mobileLogoutTrigger = document.getElementById('mobile-logout-trigger');
+
+mobileSearchTrigger?.addEventListener('click', () => {
+  setTopbarMenuOpen(false);
+  openCmdPalette();
+});
+mobileRefreshTrigger?.addEventListener('click', () => {
+  setTopbarMenuOpen(false);
+  document.getElementById('refresh').click();
+});
+mobileLogoutTrigger?.addEventListener('click', () => {
+  setTopbarMenuOpen(false);
+  document.getElementById('logout-btn').click();
+});
+
+mobileViewport.addEventListener('change', syncResponsiveChrome);
+syncResponsiveChrome();
 
 // ── PAGE NAVIGATION ────────────────────────────────────────────
 const pages = { dashboard: null, integrations: null, settings: null, audit: null };
@@ -274,6 +383,8 @@ function showPage(name) {
   });
 
   pageTitle.textContent = PAGE_TITLES[name] || name;
+  closeMobileSidebar({ restoreFocus: false });
+  setTopbarMenuOpen(false);
 
   if (name === 'audit') loadAuditPage();
   if (name === 'integrations') loadIntegrationsPage();
@@ -394,6 +505,7 @@ function applyFilters() {
   }
 
   renderCandidateRows();
+  renderCandidateCards();
   updateSortHeaders();
   updateEmptyState();
   updateKpiFromFiltered();
@@ -430,12 +542,19 @@ document.querySelectorAll('th.sortable').forEach((th) => {
 
 // ── CANDIDATE TABLE ────────────────────────────────────────────
 const candidateRowsTbody = document.getElementById('candidate-rows');
+const candidatesTable = document.getElementById('candidates-table');
+const mobileCandidateList = document.getElementById('mobile-candidate-list');
+const candidatesTableWrap = document.getElementById('candidates-table-wrap');
 const emptyState = document.getElementById('empty-state');
 
 function statusPill(state) {
   const label = STATE_LABELS[state] || state || '—';
   const cls   = STATE_PILL_CLASS[state] || 'pill-default';
   return `<span class="pill ${cls}">${esc(label)}</span>`;
+}
+
+function rowActionBtn(action, id, iconSvg, label, extraClass = '') {
+  return `<button class="action-btn ${extraClass}" data-action="${esc(action)}" data-id="${esc(id)}" aria-label="${esc(label)} candidate" title="${esc(label)}">${iconSvg}<span>${esc(label)}</span></button>`;
 }
 
 function renderCandidateRows() {
@@ -480,7 +599,6 @@ function renderCandidateRows() {
         </div>
       </td>`;
 
-    // Click row to open modal
     row.addEventListener('click', (e) => {
       if (e.target.closest('.col-check') || e.target.closest('.row-actions')) return;
       openCandidateModal(c.id);
@@ -490,8 +608,49 @@ function renderCandidateRows() {
   }
 }
 
-function rowActionBtn(action, id, iconSvg, label, extraClass = '') {
-  return `<button class="action-btn ${extraClass}" data-action="${esc(action)}" data-id="${esc(id)}" aria-label="${esc(label)} candidate" title="${esc(label)}">${iconSvg}<span>${esc(label)}</span></button>`;
+function renderCandidateCards() {
+  mobileCandidateList.innerHTML = '';
+
+  if (!filteredCandidates.length) return;
+
+  mobileCandidateList.innerHTML = filteredCandidates.map((c) => {
+    const score = c.recommendation?.score ?? '—';
+    const rank = c.recommendation?.rankLabel ?? '—';
+    const isSelected = selectedIds.has(c.id);
+    return `
+      <article class="mobile-candidate-card" data-id="${esc(c.id)}">
+        <div class="mobile-card-top">
+          <label class="mobile-card-select">
+            <input type="checkbox" class="row-check" data-id="${esc(c.id)}" aria-label="Select ${esc(c.fullName)}" ${isSelected ? 'checked' : ''} />
+            <span>${isSelected ? 'Selected' : 'Select'}</span>
+          </label>
+          ${statusPill(c.workflowState)}
+        </div>
+        <button class="mobile-card-body" type="button" data-open-candidate="${esc(c.id)}" aria-label="Open ${esc(c.fullName)} details">
+          <span class="mobile-card-name">${esc(c.fullName)}</span>
+          <span class="mobile-card-email">${esc(c.email || 'No email')}</span>
+          <span class="mobile-card-position">${esc(c.position || 'No position')}</span>
+          <div class="mobile-card-stats">
+            <div class="mobile-stat">
+              <span class="mobile-stat-label">Score</span>
+              <span class="mobile-stat-value">${esc(String(score))}</span>
+            </div>
+            <div class="mobile-stat">
+              <span class="mobile-stat-label">Recommendation</span>
+              <span class="mobile-stat-value">${esc(rank)}</span>
+            </div>
+          </div>
+        </button>
+        <div class="row-actions mobile-card-actions">
+          ${rowActionBtn('view', c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`, 'View')}
+          ${rowActionBtn('copy', c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`, 'Copy')}
+          ${rowActionBtn('followup', c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`, 'Follow-up')}
+          ${rowActionBtn('interview', c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`, 'Schedule')}
+          ${rowActionBtn('shortlist', c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`, 'Shortlist')}
+          ${rowActionBtn('archive', c.id, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`, c.isArchived ? 'Unarchive' : 'Archive')}
+        </div>
+      </article>`;
+  }).join('');
 }
 
 function canEditOutboundMessages() {
@@ -536,10 +695,26 @@ function renderSkeletonRows(n = 5) {
     </tr>`).join('');
 }
 
+function renderSkeletonCards(n = 4) {
+  mobileCandidateList.innerHTML = Array.from({ length: n }, () => `
+    <article class="mobile-candidate-card">
+      <div class="skeleton-cell" style="width:72px;height:16px"></div>
+      <div class="skeleton-cell" style="width:140px;height:16px"></div>
+      <div class="skeleton-cell" style="width:100%;height:12px"></div>
+      <div class="mobile-card-stats">
+        <div class="skeleton-cell" style="width:100%;height:48px"></div>
+        <div class="skeleton-cell" style="width:100%;height:48px"></div>
+      </div>
+      <div class="skeleton-cell" style="width:100%;height:36px"></div>
+    </article>`).join('');
+}
+
 function updateEmptyState() {
   const hasRows = filteredCandidates.length > 0;
   emptyState.hidden = hasRows;
-  document.getElementById('candidates-table').style.display = hasRows ? '' : 'none';
+  candidatesTableWrap.hidden = !hasRows;
+  mobileCandidateList.hidden = !hasRows;
+  candidatesTable.hidden = !hasRows;
 }
 
 // ── BULK SELECT ────────────────────────────────────────────────
@@ -555,14 +730,31 @@ function updateBulkUI() {
   selectAll.checked = n > 0 && n === filteredCandidates.length;
 }
 
+function syncSelectionState(inputEl) {
+  const id = inputEl.dataset.id;
+  if (inputEl.checked) selectedIds.add(id);
+  else selectedIds.delete(id);
+
+  const row = inputEl.closest('tr');
+  if (row) row.classList.toggle('selected', inputEl.checked);
+
+  const card = inputEl.closest('.mobile-candidate-card');
+  if (card) {
+    const label = card.querySelector('.mobile-card-select span');
+    if (label) label.textContent = inputEl.checked ? 'Selected' : 'Select';
+  }
+
+  updateBulkUI();
+}
+
 candidateRowsTbody.addEventListener('change', (e) => {
   if (!e.target.classList.contains('row-check')) return;
-  const id = e.target.dataset.id;
-  if (e.target.checked) selectedIds.add(id);
-  else selectedIds.delete(id);
-  const row = e.target.closest('tr');
-  if (row) row.classList.toggle('selected', e.target.checked);
-  updateBulkUI();
+  syncSelectionState(e.target);
+});
+
+mobileCandidateList.addEventListener('change', (e) => {
+  if (!e.target.classList.contains('row-check')) return;
+  syncSelectionState(e.target);
 });
 
 selectAll.addEventListener('change', () => {
@@ -571,12 +763,14 @@ selectAll.addEventListener('change', () => {
     else selectedIds.delete(c.id);
   });
   renderCandidateRows();
+  renderCandidateCards();
   updateBulkUI();
 });
 
 document.getElementById('bulk-clear').addEventListener('click', () => {
   selectedIds.clear();
   renderCandidateRows();
+  renderCandidateCards();
   updateBulkUI();
 });
 
@@ -619,28 +813,24 @@ document.getElementById('bulk-reject').addEventListener('click', () => {
 });
 
 // ── ROW ACTION HANDLER ─────────────────────────────────────────
-candidateRowsTbody.addEventListener('click', async (e) => {
-  const btn = e.target.closest('.action-btn');
-  if (!btn) return;
-
-  const { action, id } = btn.dataset;
+async function handleCandidateAction(action, id, btn = null) {
+  const candidate = allCandidates.find((x) => x.id === id);
 
   if (action === 'view') { openCandidateModal(id); return; }
 
   if (action === 'copy') {
-    const c = allCandidates.find((x) => x.id === id);
-    if (c?.email) {
+    if (candidate?.email) {
       try {
-        await navigator.clipboard.writeText(c.email);
-        toast(`Copied: ${c.email}`, 'success');
+        await navigator.clipboard.writeText(candidate.email);
+        toast(`Copied: ${candidate.email}`, 'success');
       } catch {
-        toast(c.email, 'info');
+        toast(candidate.email, 'info');
       }
     }
     return;
   }
 
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   try {
     if (action === 'score') {
       await api(`/api/candidates/${id}/score`, { method: 'POST' });
@@ -650,11 +840,11 @@ candidateRowsTbody.addEventListener('click', async (e) => {
       toast('Candidate shortlisted', 'success');
     } else if (action === 'followup') {
       await openFollowUpModal(id);
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
       return;
     } else if (action === 'interview') {
       await openInterviewModal(id);
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
       return;
     } else if (action === 'hire') {
       await api(`/api/candidates/${id}/hire`, { method: 'POST' });
@@ -663,19 +853,17 @@ candidateRowsTbody.addEventListener('click', async (e) => {
       pendingRejectIds = [id];
       document.getElementById('reject-reason').value = '';
       openModal('reject-modal');
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
       return;
     } else if (action === 'archive') {
-      const c = allCandidates.find((x) => x.id === id);
       await api(`/api/candidates/${id}/archive`, { method: 'PATCH' });
-      toast(c && c.isArchived ? 'Candidate unarchived' : 'Candidate archived', 'success');
+      toast(candidate && candidate.isArchived ? 'Candidate unarchived' : 'Candidate archived', 'success');
     } else if (action === 'delete') {
       pendingDeleteIds = [id];
-      const c = allCandidates.find((x) => x.id === id);
       document.getElementById('delete-modal-message').innerHTML =
-        `This action is <strong>permanent</strong> and cannot be undone. <strong>${esc(c ? c.fullName : 'This candidate')}</strong> and all associated documents will be permanently removed.`;
+        `This action is <strong>permanent</strong> and cannot be undone. <strong>${esc(candidate ? candidate.fullName : 'This candidate')}</strong> and all associated documents will be permanently removed.`;
       openModal('delete-modal');
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
       return;
     }
     await loadCandidates();
@@ -683,8 +871,28 @@ candidateRowsTbody.addEventListener('click', async (e) => {
   } catch (err) {
     toast(err.message, 'error');
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
+}
+
+candidateRowsTbody.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.action-btn');
+  if (!btn) return;
+  await handleCandidateAction(btn.dataset.action, btn.dataset.id, btn);
+});
+
+mobileCandidateList.addEventListener('click', async (e) => {
+  if (e.target.closest('.mobile-card-select')) {
+    e.stopPropagation();
+    return;
+  }
+  const btn = e.target.closest('.action-btn');
+  if (btn) {
+    await handleCandidateAction(btn.dataset.action, btn.dataset.id, btn);
+    return;
+  }
+  const openBtn = e.target.closest('[data-open-candidate]');
+  if (openBtn) openCandidateModal(openBtn.dataset.openCandidate);
 });
 
 // ── EXPORT CSV ────────────────────────────────────────────────
@@ -718,8 +926,13 @@ document.getElementById('clear-filters').addEventListener('click', () => {
 // ── LOAD CANDIDATES ────────────────────────────────────────────
 async function loadCandidates() {
   renderSkeletonRows();
+  renderSkeletonCards();
   emptyState.hidden = true;
-  document.getElementById('candidates-table').style.display = '';
+  candidatesTableWrap.hidden = false;
+  candidatesTable.hidden = false;
+  mobileCandidateList.hidden = false;
+  candidatesTable.setAttribute('aria-busy', 'true');
+  mobileCandidateList.setAttribute('aria-busy', 'true');
 
   try {
     const url = showArchived ? '/api/candidates?archived=true' : '/api/candidates';
@@ -728,6 +941,10 @@ async function loadCandidates() {
     applyFilters();
   } catch (err) {
     candidateRowsTbody.innerHTML = `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--danger)">${esc(err.message)}</td></tr>`;
+    mobileCandidateList.innerHTML = `<div class="mobile-candidate-card" style="color:var(--danger)">${esc(err.message)}</div>`;
+  } finally {
+    candidatesTable.removeAttribute('aria-busy');
+    mobileCandidateList.removeAttribute('aria-busy');
   }
 }
 
@@ -1369,6 +1586,8 @@ let cmdFocusIndex = -1;
 let filteredCmds = [...CMD_ACTIONS];
 
 function openCmdPalette() {
+  closeMobileSidebar({ restoreFocus: false });
+  setTopbarMenuOpen(false);
   cmdPalette.removeAttribute('hidden');
   cmdPalette.setAttribute('aria-hidden', 'false');
   cmdInput.value = '';
@@ -1452,6 +1671,7 @@ document.addEventListener('keydown', (e) => {
 
   // 'N' → new candidate
   if (!inInput && e.key.toLowerCase() === 'n' && openModals.size === 0 && cmdPalette.hasAttribute('hidden')) {
+    setTopbarMenuOpen(false);
     openModal('intake-modal');
     return;
   }

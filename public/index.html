@@ -82,6 +82,7 @@
         </button>
       </div>
     </nav>
+    <div class="nav-backdrop" id="nav-backdrop" hidden></div>
 
     <!-- ═══ MAIN WRAP ═══ -->
     <div class="main-wrap" id="main-wrap">
@@ -89,18 +90,23 @@
       <!-- Topbar -->
       <header class="topbar">
         <div class="topbar-left">
+          <button class="mobile-nav-trigger" id="mobile-nav-trigger" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
           <h1 class="page-title" id="page-title">Dashboard</h1>
         </div>
         <div class="topbar-right">
-          <span id="current-user-label" class="user-chip" aria-live="polite"></span>
-          <button class="cmd-palette-trigger" id="cmd-trigger" aria-label="Open command palette (Ctrl+K)">
+          <span id="current-user-label" class="user-chip topbar-desktop-only" aria-live="polite"></span>
+          <button class="cmd-palette-trigger topbar-desktop-only" id="cmd-trigger" aria-label="Open command palette (Ctrl+K)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
             <span>Search</span>
             <kbd>⌘K</kbd>
           </button>
-          <button class="btn btn-secondary" id="refresh" aria-label="Refresh data">
+          <button class="btn btn-secondary topbar-desktop-only" id="refresh" aria-label="Refresh data">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <polyline points="1 4 1 10 7 10"/>
               <path d="M3.51 15a9 9 0 1 0 .49-3.65"/>
@@ -113,7 +119,23 @@
             </svg>
             New Candidate
           </button>
-          <button class="btn btn-secondary" id="logout-btn" aria-label="Logout">
+          <button class="topbar-menu-trigger topbar-mobile-only" id="topbar-menu-trigger" aria-label="Open quick actions" aria-expanded="false" aria-controls="topbar-menu" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/>
+            </svg>
+          </button>
+          <div class="topbar-menu" id="topbar-menu" hidden>
+            <div class="topbar-menu-header">
+              <span>Quick Actions</span>
+            </div>
+            <button class="topbar-menu-item" id="mobile-search-trigger" type="button">
+              <span>Search</span>
+              <kbd>⌘K</kbd>
+            </button>
+            <button class="topbar-menu-item" id="mobile-refresh-trigger" type="button">Refresh data</button>
+            <button class="topbar-menu-item" id="mobile-logout-trigger" type="button">Logout</button>
+          </div>
+          <button class="btn btn-secondary topbar-desktop-only" id="logout-btn" aria-label="Logout">
             Logout
           </button>
         </div>
@@ -269,7 +291,7 @@
             <button class="btn btn-sm btn-ghost" id="bulk-clear" aria-label="Clear selection">Clear</button>
           </div>
 
-          <div class="table-wrap" role="region" aria-label="Candidates table" tabindex="0">
+          <div class="table-wrap" id="candidates-table-wrap" role="region" aria-label="Candidates table" tabindex="0">
             <table id="candidates-table" aria-label="Candidate pipeline" aria-live="polite">
               <thead>
                 <tr>
@@ -306,16 +328,16 @@
               </thead>
               <tbody id="candidate-rows"></tbody>
             </table>
-
-            <div class="empty-state" id="empty-state" hidden>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <line x1="23" y1="11" x2="17" y2="11"/><line x1="20" y1="8" x2="20" y2="14"/>
-              </svg>
-              <p>No candidates match your filters.</p>
-              <button class="btn btn-sm" id="clear-filters">Clear Filters</button>
-            </div>
+          </div>
+          <div class="mobile-candidate-list" id="mobile-candidate-list" hidden></div>
+          <div class="empty-state" id="empty-state" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <line x1="23" y1="11" x2="17" y2="11"/><line x1="20" y1="8" x2="20" y2="14"/>
+            </svg>
+            <p>No candidates match your filters.</p>
+            <button class="btn btn-sm" id="clear-filters">Clear Filters</button>
           </div>
         </section>
 

@@ -28,12 +28,12 @@
         </div>
         <label for="new-password">Password</label>
         <input id="new-password" type="password" required />
-        <p class="auth-subtitle" style="margin:-4px 0 10px">Minimum 12 chars with uppercase, lowercase, number, and symbol.</p>
+        <p class="auth-subtitle auth-inline-hint">Minimum 12 chars with uppercase, lowercase, number, and symbol.</p>
         <p id="create-error" class="error-msg"></p>
         <button type="submit">Create user</button>
       </form>
 
-      <div style="margin-top:14px">
+      <div class="auth-actions">
         <button id="refresh-users" class="ghost-btn" type="button">Refresh users</button>
       </div>
       <ul id="users-list" class="list"></ul>
