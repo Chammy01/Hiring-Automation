@@ -20,12 +20,17 @@ function editor(requestBuilder) {
   return requestBuilder.set('x-api-key', 'test-editor-key');
 }
 
+function developer(requestBuilder) {
+  return requestBuilder.set('x-api-key', 'test-developer-key');
+}
+
 test.beforeEach(() => {
   resetStore();
   config.hrApiKeys = new Map([
     ['test-hr-key', 'hr'],
     ['test-admin-key', 'admin'],
-    ['test-editor-key', 'editor']
+    ['test-editor-key', 'editor'],
+    ['test-developer-key', 'developer']
   ]);
 });
 test.after(() => resetStore());
@@ -158,12 +163,29 @@ test('settings PUT updates persisted values', async () => {
 
 test('settings PUT allows editor role updates', async () => {
   const updated = await editor(request(app).put('/api/settings')).send({
-    followUpMessage: 'Editor updated {{candidateName}}',
-    scheduleInterviewMessage: 'Editor schedule {{interviewDate}}'
+    companyName: 'Editor Config Update'
   });
   assert.equal(updated.status, 200);
-  assert.equal(updated.body.followUpMessage, 'Editor updated {{candidateName}}');
-  assert.equal(updated.body.scheduleInterviewMessage, 'Editor schedule {{interviewDate}}');
+  assert.equal(updated.body.companyName, 'Editor Config Update');
+});
+
+test('settings PUT allows admin/hr/developer to update outbound message templates', async () => {
+  for (const callAs of [admin, hr, developer]) {
+    const updated = await callAs(request(app).put('/api/settings')).send({
+      followUpMessage: 'Allowed {{candidateName}}',
+      scheduleInterviewMessage: 'Allowed interview {{interviewDate}}'
+    });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.followUpMessage, 'Allowed {{candidateName}}');
+    assert.equal(updated.body.scheduleInterviewMessage, 'Allowed interview {{interviewDate}}');
+  }
+});
+
+test('settings PUT rejects editor updates to outbound message templates', async () => {
+  const res = await editor(request(app).put('/api/settings')).send({
+    followUpMessage: 'Editor cannot set this'
+  });
+  assert.equal(res.status, 403);
 });
 
 test('follow-up email uses message template from settings with placeholder replacement', async () => {
@@ -187,6 +209,29 @@ test('follow-up email uses message template from settings with placeholder repla
   assert.ok(body.includes('Hello Template Followup for Administrative Aide IV (Clerk II).'));
   assert.ok(body.includes('Missing:'));
   assert.ok(!body.includes('{{candidateName}}'));
+});
+
+test('follow-up endpoint accepts optional custom message override', async () => {
+  await hr(request(app).put('/api/settings')).send({
+    followUpMessage: 'Default follow-up {{candidateName}}'
+  });
+
+  const intake = await hr(request(app).post('/api/applications/intake')).send({
+    fullName: 'Followup Custom',
+    email: 'followup-custom@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+  assert.equal(intake.status, 201);
+
+  const res = await hr(request(app).post(`/api/candidates/${intake.body.candidate.id}/follow-up`)).send({
+    message: 'Custom hello {{candidateName}} for {{position}}'
+  });
+  assert.equal(res.status, 200);
+
+  const dispatch = readStore().outboundDispatches.find((item) => item.candidateId === intake.body.candidate.id);
+  assert.ok(dispatch, 'follow-up dispatch should be queued');
+  const body = decryptText(dispatch.bodyEncrypted);
+  assert.ok(body.includes('Custom hello Followup Custom for Administrative Aide IV (Clerk II)'));
 });
 
 test('interview email uses message template from settings with placeholder replacement', async () => {
@@ -224,6 +269,58 @@ test('interview email uses message template from settings with placeholder repla
   assert.ok(scheduled, 'interview email event should exist');
   assert.ok(scheduled.body.includes('Hi Template Interview, your Administrative Aide IV (Clerk II) interview is 2026-08-01 09:30 at https://meet.example.com/interview-room'));
   assert.ok(!scheduled.body.includes('{{interviewDate}}'));
+});
+
+test('interview endpoint supports custom message and logs reschedule audit action', async () => {
+  const intake = await hr(request(app).post('/api/applications/intake')).send({
+    fullName: 'Interview Reschedule',
+    email: 'interview-reschedule@example.com',
+    position: 'Administrative Aide IV (Clerk II)'
+  });
+  assert.equal(intake.status, 201);
+
+  updateStore((state) => {
+    const candidate = state.candidates.find((item) => item.id === intake.body.candidate.id);
+    candidate.workflowState = WORKFLOW_STATES.SHORTLISTED;
+    candidate.statusOfApplication = 'Shortlisted';
+    return state;
+  });
+
+  const first = await hr(request(app).post(`/api/candidates/${intake.body.candidate.id}/interview`)).send({
+    date: '2026-09-10',
+    time: '10:00',
+    venue: 'Main Office'
+  });
+  assert.equal(first.status, 200);
+
+  const second = await hr(request(app).post(`/api/candidates/${intake.body.candidate.id}/interview`)).send({
+    date: '2026-09-11',
+    time: '14:00',
+    venue: 'Conference Room B',
+    message: 'Rescheduled for {{candidateName}} at {{interviewDate}} {{interviewTime}}'
+  });
+  assert.equal(second.status, 200);
+
+  const candidate = await hr(request(app).get(`/api/candidates/${intake.body.candidate.id}`));
+  assert.equal(candidate.status, 200);
+  assert.equal(candidate.body.interviewSchedule.date, '2026-09-11');
+  assert.equal(candidate.body.interviewSchedule.time, '14:00');
+
+  const events = await hr(request(app).get('/api/email-events'));
+  const scheduled = events.body.items.find(
+    (item) =>
+      item.candidateId === intake.body.candidate.id &&
+      item.subject === 'Initial Interview Schedule - Administrative Aide IV (Clerk II)' &&
+      item.body.includes('Rescheduled for Interview Reschedule at 2026-09-11 14:00')
+  );
+  assert.ok(scheduled, 'rescheduled interview email event should exist');
+
+  const rescheduledAudit = readStore().auditLogs.find(
+    (entry) =>
+      entry.action === 'candidate.interview_rescheduled' &&
+      entry.candidateId === intake.body.candidate.id
+  );
+  assert.ok(rescheduledAudit, 'reschedule should create candidate.interview_rescheduled audit log');
 });
 
 test('settings PUT rejects invalid email for companyEmail', async () => {
