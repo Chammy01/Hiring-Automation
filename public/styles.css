@@ -500,7 +500,7 @@ body.nav-open {
   white-space: nowrap;
   text-decoration: none;
   font-family: inherit;
-  min-height: 40px;
+  min-height: 44px;
 }
 
 .btn:hover  { background: var(--primary-hover); }
@@ -853,7 +853,7 @@ input[type="checkbox"] {
   white-space: nowrap;
   transition: background var(--dur), color var(--dur), border-color var(--dur);
   font-family: inherit;
-  min-height: 32px;
+  min-height: 44px;
 }
 
 .action-btn svg { width: 11px; height: 11px; }
@@ -1146,7 +1146,7 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px; height: 32px;
+  width: 44px; height: 44px;
   border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
   background: var(--glass-bg);
@@ -1154,7 +1154,7 @@ input[type="checkbox"] {
   cursor: pointer;
   flex-shrink: 0;
   transition: background var(--dur), color var(--dur);
-  min-width: 32px;
+  min-width: 44px;
 }
 
 .modal-close:hover {
