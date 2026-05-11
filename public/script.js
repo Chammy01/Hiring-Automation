@@ -619,7 +619,7 @@ function renderCandidateCards() {
     return `
       <article class="mobile-candidate-card" data-id="${esc(c.id)}">
         <div class="mobile-card-top">
-          <label class="mobile-card-select" onclick="event.stopPropagation()">
+          <label class="mobile-card-select">
             <input type="checkbox" class="row-check" data-id="${esc(c.id)}" aria-label="Select ${esc(c.fullName)}" ${isSelected ? 'checked' : ''} />
             <span>${isSelected ? 'Selected' : 'Select'}</span>
           </label>
@@ -812,10 +812,11 @@ document.getElementById('bulk-reject').addEventListener('click', () => {
 
 // ── ROW ACTION HANDLER ─────────────────────────────────────────
 async function handleCandidateAction(action, id, btn = null) {
+  const candidate = allCandidates.find((x) => x.id === id);
+
   if (action === 'view') { openCandidateModal(id); return; }
 
   if (action === 'copy') {
-    const candidate = allCandidates.find((x) => x.id === id);
     if (candidate?.email) {
       try {
         await navigator.clipboard.writeText(candidate.email);
@@ -853,12 +854,10 @@ async function handleCandidateAction(action, id, btn = null) {
       if (btn) btn.disabled = false;
       return;
     } else if (action === 'archive') {
-      const candidate = allCandidates.find((x) => x.id === id);
       await api(`/api/candidates/${id}/archive`, { method: 'PATCH' });
       toast(candidate && candidate.isArchived ? 'Candidate unarchived' : 'Candidate archived', 'success');
     } else if (action === 'delete') {
       pendingDeleteIds = [id];
-      const candidate = allCandidates.find((x) => x.id === id);
       document.getElementById('delete-modal-message').innerHTML =
         `This action is <strong>permanent</strong> and cannot be undone. <strong>${esc(candidate ? candidate.fullName : 'This candidate')}</strong> and all associated documents will be permanently removed.`;
       openModal('delete-modal');
@@ -881,6 +880,10 @@ candidateRowsTbody.addEventListener('click', async (e) => {
 });
 
 mobileCandidateList.addEventListener('click', async (e) => {
+  if (e.target.closest('.mobile-card-select')) {
+    e.stopPropagation();
+    return;
+  }
   const btn = e.target.closest('.action-btn');
   if (btn) {
     await handleCandidateAction(btn.dataset.action, btn.dataset.id, btn);
