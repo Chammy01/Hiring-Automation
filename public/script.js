@@ -255,7 +255,7 @@ const mobileNavTrigger = document.getElementById('mobile-nav-trigger');
 const topbarMenu = document.getElementById('topbar-menu');
 const topbarMenuTrigger = document.getElementById('topbar-menu-trigger');
 const mobileViewport = window.matchMedia('(max-width: 768px)');
-let sidebarReturnFocus = null;
+let sidebarReturnFocusElement = null;
 
 function isMobileViewport() {
   return mobileViewport.matches;
@@ -271,7 +271,7 @@ function setSidebarCollapsed(collapsed, { persist = true } = {}) {
 
 function openMobileSidebar(trigger = document.activeElement) {
   if (!isMobileViewport()) return;
-  sidebarReturnFocus = trigger instanceof HTMLElement ? trigger : mobileNavTrigger;
+  sidebarReturnFocusElement = trigger instanceof HTMLElement ? trigger : mobileNavTrigger;
   sidebar.classList.add('mobile-open');
   navBackdrop.hidden = false;
   document.body.classList.add('nav-open');
@@ -293,8 +293,8 @@ function closeMobileSidebar({ restoreFocus = true } = {}) {
   sidebarToggle.setAttribute('aria-expanded', 'false');
   sidebarToggle.setAttribute('aria-label', 'Open navigation');
   mobileNavTrigger.setAttribute('aria-expanded', 'false');
-  if (restoreFocus && sidebarReturnFocus) sidebarReturnFocus.focus();
-  sidebarReturnFocus = null;
+  if (restoreFocus && sidebarReturnFocusElement) sidebarReturnFocusElement.focus();
+  sidebarReturnFocusElement = null;
 }
 
 function syncResponsiveChrome() {
