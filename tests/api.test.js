@@ -79,10 +79,30 @@ test('integration endpoints expose status and manual sync response', async () =>
   assert.equal(status.status, 200);
   assert.equal(typeof status.body.googleSheets.enabled, 'boolean');
   assert.ok(Array.isArray(status.body.upgrades));
+  const ocrUpgrade = status.body.upgrades.find((x) => x.key === 'ocr_pipeline');
+  assert.ok(ocrUpgrade);
+  assert.equal(ocrUpgrade.status, 'configured');
+  assert.ok(ocrUpgrade.diagnostics);
+  assert.equal(typeof ocrUpgrade.diagnostics.message, 'string');
+  assert.equal(typeof ocrUpgrade.diagnostics.queue.queued, 'number');
 
   const sync = await hr(request(app).post('/api/integrations/google-sheets/sync'));
   assert.equal(sync.status, 200);
   assert.equal(sync.body.synced, false);
+});
+
+test('integration endpoint reports OCR pipeline connected when heartbeat is fresh', async () => {
+  updateStore((state) => {
+    state.settings.integrations.docParser.lastHeartbeatAt = new Date().toISOString();
+    state.settings.integrations.docParser.lastSeenAt = new Date().toISOString();
+    return state;
+  });
+
+  const status = await hr(request(app).get('/api/integrations'));
+  assert.equal(status.status, 200);
+  const ocrUpgrade = status.body.upgrades.find((x) => x.key === 'ocr_pipeline');
+  assert.ok(ocrUpgrade);
+  assert.equal(ocrUpgrade.status, 'connected');
 });
 
 test('documents/content endpoint classifies files and updates doc status', async () => {
@@ -109,9 +129,15 @@ test('documents/content endpoint classifies files and updates doc status', async
   assert.equal(result.status, 200);
   assert.ok(result.body.candidate);
   assert.ok(Array.isArray(result.body.classifications));
+  assert.ok(Array.isArray(result.body.queuedParsingJobs));
+  assert.equal(result.body.queuedParsingJobs.length, 3);
   assert.equal(result.body.candidate.documentStatus['Letter of Intent'], 'received');
   assert.equal(result.body.candidate.documentStatus['PDS'], 'received');
   assert.equal(result.body.candidate.documentStatus['Proof of CSC Eligibility'], 'received');
+
+  const parsingJobs = await hr(request(app).get('/api/documents/parsing-jobs'));
+  assert.equal(parsingJobs.status, 200);
+  assert.equal(parsingJobs.body.items.length, 3);
 });
 
 test('documents/content endpoint returns 400 for missing files field', async () => {

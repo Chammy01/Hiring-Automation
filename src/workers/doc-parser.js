@@ -50,6 +50,31 @@ const SKILLS_KEYWORDS = [
   'nursing', 'patient care', 'medical', 'teaching', 'curriculum', 'research'
 ];
 
+function summarizeQueue(state) {
+  const jobs = state.parsingJobs || [];
+  return {
+    queued: jobs.filter((j) => j.status === 'queued').length,
+    processing: jobs.filter((j) => j.status === 'processing').length,
+    succeeded: jobs.filter((j) => j.status === 'succeeded').length,
+    failed: jobs.filter((j) => j.status === 'failed').length
+  };
+}
+
+function updateParserRuntime(fields = {}) {
+  updateStore((state) => {
+    const integrations = (state.settings.integrations = state.settings.integrations || {});
+    const existing = integrations.docParser || {};
+    integrations.docParser = {
+      ...existing,
+      ...fields,
+      lastSeenAt: nowIso(),
+      queueSnapshotAt: nowIso(),
+      queueSnapshot: summarizeQueue(state)
+    };
+    return state;
+  });
+}
+
 /**
  * Parse structured fields from extracted text using deterministic heuristics.
  *
@@ -221,6 +246,13 @@ function enqueueParsingJob(opts = {}) {
       state.parsingJobs = [];
     }
     state.parsingJobs.push(job);
+    const integrations = (state.settings.integrations = state.settings.integrations || {});
+    integrations.docParser = {
+      ...(integrations.docParser || {}),
+      lastSeenAt: nowIso(),
+      queueSnapshotAt: nowIso(),
+      queueSnapshot: summarizeQueue(state)
+    };
     return state;
   });
 
@@ -270,6 +302,11 @@ async function processParsingJob(jobId, runtimeOpts = {}) {
   }
 
   updateParsingJob(jobId, { status: 'processing', startedAt: nowIso() });
+  updateParserRuntime({
+    lastHeartbeatAt: nowIso(),
+    lastJobStartedAt: nowIso(),
+    lastJobId: jobId
+  });
 
   try {
     const buffer = runtimeOpts.buffer || null;
@@ -291,6 +328,12 @@ async function processParsingJob(jobId, runtimeOpts = {}) {
       notes: notes.join('; '),
       completedAt: nowIso()
     });
+    updateParserRuntime({
+      lastHeartbeatAt: nowIso(),
+      lastJobCompletedAt: nowIso(),
+      lastJobId: jobId,
+      lastError: ''
+    });
 
     // Optionally enrich candidate record
     if (job.candidateId) {
@@ -311,6 +354,11 @@ async function processParsingJob(jobId, runtimeOpts = {}) {
       retryCount,
       lastError: err.message,
       startedAt: failed ? job.startedAt : null
+    });
+    updateParserRuntime({
+      lastHeartbeatAt: nowIso(),
+      lastJobId: jobId,
+      lastError: err.message
     });
 
     console.error(`[doc-parser] Job ${jobId} ${failed ? 'failed' : 'will retry'}: ${err.message}`);
@@ -369,6 +417,7 @@ function enrichCandidateFromFields(candidateId, fields, confidence) {
 // ─── Worker loop ──────────────────────────────────────────────────────────────
 
 async function runOnce(concurrency = config.ocrWorkerConcurrency) {
+  updateParserRuntime({ lastHeartbeatAt: nowIso() });
   const pending = listParsingJobs({ status: 'queued' });
   if (pending.length === 0) {
     return 0;
