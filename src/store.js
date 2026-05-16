@@ -45,24 +45,41 @@ const initialState = {
   outboundDispatches: [],
   parsingJobs: [],
   templates: { ...DEFAULT_TEMPLATES },
-  settings: {
-    scoringWeights: { ...SCORING_WEIGHTS },
-    appSettings: makeDefaultAppSettings(),
-    integrations: {
-      googleSheets: {
-        spreadsheetId: '',
-        spreadsheetUrl: '',
-        lastSyncedAt: '',
-        lastError: ''
-      }
-    },
-    customPositions: [],
-    webhooks: []
-  }
+    settings: {
+      scoringWeights: { ...SCORING_WEIGHTS },
+      appSettings: makeDefaultAppSettings(),
+      integrations: {
+        googleSheets: {
+          spreadsheetId: '',
+          spreadsheetUrl: '',
+          lastSyncedAt: '',
+          lastError: ''
+        },
+        docParser: {
+          lastHeartbeatAt: '',
+          lastSeenAt: '',
+          lastJobStartedAt: '',
+          lastJobCompletedAt: '',
+          lastJobId: '',
+          lastError: '',
+          queueSnapshotAt: '',
+          queueSnapshot: {
+            queued: 0,
+            processing: 0,
+            succeeded: 0,
+            failed: 0
+          }
+        }
+      },
+      customPositions: [],
+      webhooks: []
+    }
 };
 
 function normalizeState(state = {}) {
   const googleSheetsState = (((state.settings || {}).integrations || {}).googleSheets || {});
+  const docParserState = (((state.settings || {}).integrations || {}).docParser || {});
+  const docParserQueueSnapshot = docParserState.queueSnapshot || {};
   const storedAppSettings = (state.settings && state.settings.appSettings) || {};
   const defaults = makeDefaultAppSettings();
   return {
@@ -94,6 +111,21 @@ function normalizeState(state = {}) {
           spreadsheetUrl: googleSheetsState.spreadsheetUrl || '',
           lastSyncedAt: googleSheetsState.lastSyncedAt || '',
           lastError: googleSheetsState.lastError || ''
+        },
+        docParser: {
+          lastHeartbeatAt: docParserState.lastHeartbeatAt || '',
+          lastSeenAt: docParserState.lastSeenAt || '',
+          lastJobStartedAt: docParserState.lastJobStartedAt || '',
+          lastJobCompletedAt: docParserState.lastJobCompletedAt || '',
+          lastJobId: docParserState.lastJobId || '',
+          lastError: docParserState.lastError || '',
+          queueSnapshotAt: docParserState.queueSnapshotAt || '',
+          queueSnapshot: {
+            queued: Number(docParserQueueSnapshot.queued || 0),
+            processing: Number(docParserQueueSnapshot.processing || 0),
+            succeeded: Number(docParserQueueSnapshot.succeeded || 0),
+            failed: Number(docParserQueueSnapshot.failed || 0)
+          }
         }
       },
       customPositions: Array.isArray((state.settings || {}).customPositions)

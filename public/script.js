@@ -998,14 +998,19 @@ async function loadOps() {
 
 // ── INTEGRATION STATUS ─────────────────────────────────────────
 function integrationBadge(active) {
-  return active
-    ? `<span class="pill pill-green">Connected</span>`
-    : `<span class="pill pill-default">Disconnected</span>`;
+  const normalized = String(active || '').toLowerCase();
+  if (normalized === 'connected' || normalized === 'active') {
+    return `<span class="pill pill-green">Connected</span>`;
+  }
+  if (normalized === 'configured') {
+    return `<span class="pill pill-amber">Configured</span>`;
+  }
+  return `<span class="pill pill-default">Disconnected</span>`;
 }
 
 function renderIntegrationStatus(data) {
   const gs = data.googleSheets || {};
-  const enabled = gs.enabled && gs.configured;
+  const gsStatus = gs.enabled && gs.configured ? 'connected' : 'configured';
   const intDiv = document.getElementById('integration-status');
 
   intDiv.innerHTML = `
@@ -1013,7 +1018,7 @@ function renderIntegrationStatus(data) {
       <div class="integration-info">
         <div class="integration-name">Google Sheets</div>
         <div class="integration-meta">
-          ${integrationBadge(enabled)}
+          ${integrationBadge(gsStatus)}
           ${gs.spreadsheetUrl ? `<br><a href="${esc(gs.spreadsheetUrl)}" target="_blank" rel="noreferrer">Open Spreadsheet</a>` : ''}
           ${gs.lastError ? `<br><span style="color:var(--danger);font-size:11px">Error: ${esc(gs.lastError)}</span>` : ''}
         </div>
@@ -1023,7 +1028,13 @@ function renderIntegrationStatus(data) {
       <div class="integration-item">
         <div class="integration-info">
           <div class="integration-name">${esc(u.label)}</div>
-          <div class="integration-meta">${integrationBadge(u.status === 'active')}</div>
+          <div class="integration-meta">
+            ${integrationBadge(u.status)}
+            ${u.diagnostics?.message ? `<br><span style="font-size:11px">${esc(u.diagnostics.message)}</span>` : ''}
+            ${(u.diagnostics && u.diagnostics.queue)
+              ? `<br><span style="font-size:11px">Queue: ${esc(String(u.diagnostics.queue.queued))} queued · ${esc(String(u.diagnostics.queue.processing))} processing</span>`
+              : ''}
+          </div>
         </div>
       </div>`).join('')}
   `;

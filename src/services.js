@@ -32,6 +32,71 @@ function getStateAppSettings(state) {
   return Object.assign({}, makeDefaultAppSettings(), (state.settings && state.settings.appSettings) || {});
 }
 
+function getDocParserIntegrationState(state) {
+  return (((state.settings || {}).integrations || {}).docParser || {});
+}
+
+function getDocParserQueueCounts(state) {
+  const jobs = state.parsingJobs || [];
+  return {
+    queued: jobs.filter((j) => j.status === 'queued').length,
+    processing: jobs.filter((j) => j.status === 'processing').length,
+    succeeded: jobs.filter((j) => j.status === 'succeeded').length,
+    failed: jobs.filter((j) => j.status === 'failed').length
+  };
+}
+
+function getMsSince(timestamp) {
+  if (!timestamp) return null;
+  const value = Date.parse(timestamp);
+  if (Number.isNaN(value)) return null;
+  const diff = Date.now() - value;
+  return diff < 0 ? 0 : diff;
+}
+
+function getDocParserIntegrationStatus(state) {
+  const runtime = getDocParserIntegrationState(state);
+  const queue = getDocParserQueueCounts(state);
+  const heartbeatTtlMs = Math.max(config.ocrWorkerPollMs * 2, 15000);
+  const msSinceHeartbeat = getMsSince(runtime.lastHeartbeatAt);
+  const heartbeatFresh = msSinceHeartbeat != null && msSinceHeartbeat <= heartbeatTtlMs;
+  const hasBacklog = queue.queued > 0 || queue.processing > 0;
+
+  let status = 'configured';
+  let message = 'Pipeline is available. Start the parser worker to process queued jobs.';
+
+  if (heartbeatFresh) {
+    status = 'connected';
+    message = 'Parser worker is running and reporting a recent heartbeat.';
+  } else if (hasBacklog && msSinceHeartbeat != null) {
+    status = 'disconnected';
+    message = 'Parser worker heartbeat is stale while jobs are queued/processing.';
+  } else if (hasBacklog && msSinceHeartbeat == null) {
+    status = 'configured';
+    message = 'Jobs are queued. Start the parser worker to process them.';
+  } else if (runtime.lastError && msSinceHeartbeat != null && msSinceHeartbeat > heartbeatTtlMs) {
+    status = 'disconnected';
+    message = 'Parser worker reported an error and is not currently connected.';
+  }
+
+  return {
+    key: 'ocr_pipeline',
+    label: 'OCR + document parsing workers',
+    status,
+    diagnostics: {
+      message,
+      ocrEnabled: config.ocrEnabled,
+      heartbeatTtlMs,
+      lastHeartbeatAt: runtime.lastHeartbeatAt || '',
+      lastSeenAt: runtime.lastSeenAt || '',
+      lastJobStartedAt: runtime.lastJobStartedAt || '',
+      lastJobCompletedAt: runtime.lastJobCompletedAt || '',
+      lastError: runtime.lastError || '',
+      queue
+    }
+  };
+}
+
 function getIntegrationsStatus() {
   const state = readStore();
   const googleSheetsState = getGoogleSheetsState(state);
@@ -52,7 +117,7 @@ function getIntegrationsStatus() {
     upgrades: [
       { key: 'gmail_dispatch', label: 'Gmail inbox + outbound dispatcher', status: config.gmailDispatchEnabled ? 'active' : 'configured' },
       { key: 'postgres_storage', label: 'PostgreSQL persistence', status: config.postgresEnabled ? 'active' : 'configured' },
-      { key: 'ocr_pipeline', label: 'OCR + document parsing workers', status: config.ocrEnabled ? 'active' : 'configured' }
+      getDocParserIntegrationStatus(state)
     ]
   };
 }
@@ -1238,6 +1303,7 @@ function importBackup(payload, actorContext = {}) {
  */
 function submitCandidateDocumentsContent(candidateId, payload) {
   let result;
+  const filesForParsing = [];
   updateStore((state) => {
     const candidate = state.candidates.find((x) => x.id === candidateId);
     if (!candidate) {
@@ -1271,6 +1337,13 @@ function submitCandidateDocumentsContent(candidateId, payload) {
           matchedBy: 'unclassified'
         });
       }
+      filesForParsing.push({
+        candidateId: candidate.id,
+        fileName: file.fileName,
+        mimeType: file.mimeType || '',
+        text: file.text || '',
+        sizeBytes: estimatedSizeBytes
+      });
     }
 
     for (const requiredDoc of candidate.requiredDocuments) {
@@ -1314,9 +1387,29 @@ function submitCandidateDocumentsContent(candidateId, payload) {
       }))
     });
 
-    result = { candidate, classifications: classificationResults };
+    result = { candidate, classifications: classificationResults, queuedParsingJobs: [] };
     return state;
   });
+
+  const queuedParsingJobs = filesForParsing.map((file) =>
+    queueDocumentParsing({
+      candidateId: file.candidateId,
+      fileName: file.fileName,
+      mimeType: file.mimeType,
+      text: file.text,
+      sizeBytes: file.sizeBytes
+    })
+  );
+  result.queuedParsingJobs = queuedParsingJobs;
+
+  updateStore((state) => {
+    addAuditLog(state, 'candidate.parsing_jobs_enqueued', candidateId, {
+      jobCount: queuedParsingJobs.length,
+      jobs: queuedParsingJobs.map((job) => ({ id: job.id, fileName: job.fileName }))
+    });
+    return state;
+  });
+
   triggerGoogleSheetsSync('candidate.documents_submitted');
   return result;
 }

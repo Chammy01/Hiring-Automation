@@ -495,6 +495,18 @@ OCR_WORKER_POLL_MS=5000    # polling interval in watch mode
 No extra Tesseract binary is required — the `tesseract.js` package uses a
 JavaScript WASM build that works on any Node.js platform.
 
+#### Dashboard connection states (OCR + document parsing workers)
+
+The **Integrations** panel reports parser pipeline health with three states:
+
+- **Connected** — parser worker heartbeat is recent; jobs can be processed now.
+- **Configured** — pipeline is available but worker is not currently connected.
+- **Disconnected** — parser worker heartbeat is stale while there is queue activity
+  (or the worker reported an error and is no longer connected).
+
+The card also shows lightweight diagnostics (queue counts and parser message) to
+help with troubleshooting.
+
 #### Run the parser worker
 
 ```bash
@@ -523,6 +535,10 @@ curl -s -X POST http://localhost:3000/api/documents/ingest \
 # Poll for result
 curl -s http://localhost:3000/api/documents/<jobId>/status -H "x-api-key: <your-key>"
 ```
+
+`POST /api/candidates/:id/documents/content` now also enqueues parsing jobs for
+submitted files automatically, so Gmail intake + content ingestion flows feed the
+same async parsing pipeline without manual parser job creation.
 
 #### Parsed fields
 
