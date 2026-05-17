@@ -577,115 +577,77 @@ curl -s -X PATCH http://localhost:3000/api/candidates/<id>/enrich \
 
 ---
 
-## Gmail OAuth Ingestion Worker (Local)
+## Gmail OAuth Intake Inbox (Railway + Local Auth)
 
-The worker in `src/workers/gmail-intake.js` reads real Gmail attachments and updates candidate document status automatically.
+The worker in `src/workers/gmail-intake.js` supports a **single connected Gmail inbox** for intake.  
+The public inbound mailbox (`settings.mailboxAddress`) remains HR-editable, while Gmail ingestion is tied to `GMAIL_INBOX_USER`.
 
-### Setup (one-time)
-
-#### 1) Enable Gmail API and create OAuth Desktop credentials
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/).
-2. Create a project (or select an existing one).
-3. Enable **Gmail API**: APIs & Services → Library → search "Gmail API" → Enable.
-4. Create OAuth credentials:
-   - APIs & Services → Credentials → **Create Credentials** → **OAuth client ID**
-   - Application type: **Desktop app**
-   - Click **Download JSON** — this is your `credentials.json`
-5. Configure the OAuth consent screen if prompted (External app, add your Gmail as test user).
-
-#### 2) Place credentials securely
-
-Put the downloaded file at the path specified by `GMAIL_CREDENTIALS_PATH` (default: `credentials.json` in project root).
-
-> ⚠️ **Never commit `credentials.json` or token files** — they are in `.gitignore`.
-
-#### 3) First-time authorization
-
-Run the worker once. It will print an authorization URL:
-
-```bash
-node src/workers/gmail-intake.js
-```
-
-Visit the URL, authorize the app, copy the authorization code, and paste it back into the terminal.
-The token is saved to `GMAIL_TOKEN_PATH` (default: `data/gmail-token.json`).
-
-### New environment variables
-
-Add these to your `.env`:
+### Required environment variables
 
 ```env
-# Path to your OAuth Desktop credentials JSON downloaded from Google Cloud Console
-GMAIL_CREDENTIALS_PATH=credentials.json
+# Single Gmail inbox used for intake (example test inbox)
+GMAIL_INBOX_USER=samrichardjomento@gmail.com
 
-# Where the OAuth token will be stored after first authorization
-GMAIL_TOKEN_PATH=data/gmail-token.json
+# OAuth Web App credentials (Google Cloud Console)
+GMAIL_OAUTH_CLIENT_ID=
+GMAIL_OAUTH_CLIENT_SECRET=
+GMAIL_OAUTH_REDIRECT_URI=https://<your-domain>/api/gmail/oauth/callback
 
-# Gmail search query used to find application emails
+# Token storage (Railway volume recommended)
+GMAIL_TOKEN_PATH=/app/data/gmail-token.json
+
+# Optional fallback token sources
+GMAIL_OAUTH_REFRESH_TOKEN=
+GMAIL_TOKEN_JSON=
+
+# Polling + idempotency
 GMAIL_POLL_QUERY=subject:(Application for) has:attachment
-
-# Polling interval in milliseconds for --watch mode (default: 60000 = 1 minute)
 GMAIL_POLL_INTERVAL_MS=60000
+GMAIL_POLL_MAX_RESULTS=50
+GMAIL_PROCESSED_LABEL=HireFlow/Processed
+GMAIL_SYNC_STATE_PATH=/app/data/gmail-intake-state.json
 
-# Base URL of the hiring-automation API server
-API_BASE_URL=http://localhost:3000
-# Use https:// for non-local hosts.
-
-# API key (optional; must match HR_API_KEY in server .env if set)
-API_KEY=
+# API connectivity for worker → app
+API_BASE_URL=https://<your-domain>
+API_KEY=<HR_API_KEY>
 ```
 
-### Running the worker
+### Step-by-step setup (specific)
 
-**Single run** (processes matching emails once, then exits):
-```bash
-node src/workers/gmail-intake.js
-```
+1. In Google Cloud Console, enable **Gmail API** and create **OAuth Client ID (Web application)**.
+2. Set the redirect URI to:
+   - `https://<your-domain>/api/gmail/oauth/callback`
+3. In Railway, set the env vars above on:
+   - Main API service
+   - Gmail intake worker service
+4. In the app, log in as **admin** or **developer**.
+5. Open **Settings → Company & Contact → Gmail Intake Connection**.
+6. Click **Connect Gmail** and authorize the target inbox (for example `samrichardjomento@gmail.com`).
+7. Confirm status shows:
+   - configured Gmail inbox (`GMAIL_INBOX_USER`)
+   - connected Gmail account
+   - last sync / error state
+8. Start worker service with:
+   - `npm run worker:gmail:watch`
 
-**Watch mode** (polls continuously on the configured interval):
-```bash
-node src/workers/gmail-intake.js --watch
-```
+### Railway service commands
 
-### How it works
+- Main API service: `npm start`
+- Gmail intake worker service: `npm run worker:gmail:watch`
 
-1. The worker searches Gmail using `GMAIL_POLL_QUERY`.
-2. For each unprocessed email it:
-   - Extracts sender email and parses position from subject (`Application for <position>`).
-   - Matches candidate using **Strategy (C)**:
-     - Find candidate with matching sender email + position → update that candidate.
-     - If ambiguous or no match, look for `CandidateID:<id>` or `[HA:<id>]` token in subject.
-     - If still unresolved, log a message and skip (the email stays processable on retry).
-   - Downloads all attachments.
-   - Extracts text from PDF (via `pdf-parse`) and DOCX (via `mammoth`).
-   - Classifies each attachment by filename hints + content keywords.
-   - Posts to `POST /api/candidates/:id/documents/content`.
-3. Processed message IDs are stored in `data/gmail-processed-ids.json` to avoid reprocessing.
+### End-to-end test instructions
 
-### Applicant subject format
+1. Ensure `GMAIL_POLL_QUERY` matches your test subject (default expects `Application for` + attachment).
+2. Send an email **from another account** to `GMAIL_INBOX_USER` with:
+   - Subject: `Application for Administrative Aide IV (Clerk II)`
+   - A PDF/DOC attachment
+3. Check worker logs for:
+   - message discovery
+   - attachment processing
+   - candidate update
+4. Open dashboard and confirm candidate/documents were updated/created.
 
-Applicants should email with subject:
-```
-Application for <Position Title>
-```
-Example:
-```
-Application for Administrative Aide IV (Clerk II)
-```
+### Notes
 
-If multiple candidates share the same email+position (rare), include a token:
-```
-Application for Administrative Aide IV (Clerk II) CandidateID:<uuid>
-```
-or:
-```
-Application for Administrative Aide IV (Clerk II) [HA:<uuid>]
-```
-
-### Security notes
-
-- `credentials.json` and `data/gmail-token.json` are in `.gitignore` — never commit them.
-- The worker does **not** log extracted document contents — only file metadata and classification results.
-- Use a dedicated Google account/project for the integration in production.
-- Revoke app access via Google Account → Security → Third-party apps if needed.
+- Idempotency uses both local processed message IDs and optional Gmail processed label (`GMAIL_PROCESSED_LABEL`).
+- If HR changes the public inbound mailbox in settings, Gmail intake still follows `GMAIL_INBOX_USER` and status UI shows both values.

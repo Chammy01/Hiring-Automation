@@ -9,8 +9,11 @@
  *   node src/workers/gmail-intake.js --watch    # poll on interval
  *
  * Required env vars (set in .env or shell):
- *   GMAIL_CREDENTIALS_PATH  path to OAuth Desktop credentials.json
+ *   GMAIL_INBOX_USER        single Gmail inbox address used for intake
+ *   GMAIL_OAUTH_CLIENT_ID / GMAIL_OAUTH_CLIENT_SECRET / GMAIL_OAUTH_REDIRECT_URI
+ *                          OAuth Web App credentials (used for token refresh)
  *   GMAIL_TOKEN_PATH        path to store the OAuth token (e.g. data/gmail-token.json)
+ *   GMAIL_OAUTH_REFRESH_TOKEN (optional direct refresh token fallback)
  *   GMAIL_POLL_QUERY        Gmail search query (default: subject:(Application for) has:attachment)
  *   GMAIL_POLL_INTERVAL_MS  poll interval in ms when --watch is used (default: 60000)
  *   API_BASE_URL            base URL of the hiring-automation server (default: http://localhost:3000)
@@ -35,10 +38,19 @@ const { classifyDocument } = require('../docClassifier');
 
 const CREDENTIALS_PATH = process.env.GMAIL_CREDENTIALS_PATH || 'credentials.json';
 const TOKEN_PATH = process.env.GMAIL_TOKEN_PATH || 'data/gmail-token.json';
+const OAUTH_CLIENT_ID = process.env.GMAIL_OAUTH_CLIENT_ID || '';
+const OAUTH_CLIENT_SECRET = process.env.GMAIL_OAUTH_CLIENT_SECRET || '';
+const OAUTH_REDIRECT_URI = process.env.GMAIL_OAUTH_REDIRECT_URI || '';
+const OAUTH_REFRESH_TOKEN = process.env.GMAIL_OAUTH_REFRESH_TOKEN || '';
+const TOKEN_JSON_RAW = process.env.GMAIL_TOKEN_JSON || '';
+const INBOX_USER = process.env.GMAIL_INBOX_USER || 'me';
 const POLL_QUERY = process.env.GMAIL_POLL_QUERY || 'subject:(Application for) has:attachment';
 const POLL_INTERVAL_MS = Number(process.env.GMAIL_POLL_INTERVAL_MS) || 60_000;
+const POLL_MAX_RESULTS = Number(process.env.GMAIL_POLL_MAX_RESULTS) || 50;
+const PROCESSED_LABEL_NAME = String(process.env.GMAIL_PROCESSED_LABEL || '').trim();
 const API_BASE_URL = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const API_KEY = process.env.API_KEY || process.env.HR_API_KEY || '';
+const SYNC_STATE_PATH = process.env.GMAIL_SYNC_STATE_PATH || 'data/gmail-intake-state.json';
 
 const WATCH_MODE = process.argv.includes('--watch');
 
@@ -77,16 +89,43 @@ function loadCredentials() {
 }
 
 function buildOAuthClient(credentials) {
+  const fromEnv = OAUTH_CLIENT_ID && OAUTH_CLIENT_SECRET && OAUTH_REDIRECT_URI;
+  if (fromEnv) {
+    return new google.auth.OAuth2(OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, OAUTH_REDIRECT_URI);
+  }
   const { client_id, client_secret, redirect_uris } = credentials.installed || credentials.web;
   return new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
 }
 
-async function getAuthenticatedClient() {
-  const credentials = loadCredentials();
-  const oAuth2Client = buildOAuthClient(credentials);
-
+function loadTokenState() {
+  if (OAUTH_REFRESH_TOKEN) {
+    return { source: 'env_refresh_token', token: { refresh_token: OAUTH_REFRESH_TOKEN } };
+  }
+  if (TOKEN_JSON_RAW) {
+    try {
+      return { source: 'env_token_json', token: JSON.parse(TOKEN_JSON_RAW) };
+    } catch (error) {
+      throw new Error(`Invalid GMAIL_TOKEN_JSON: ${error.message}`);
+    }
+  }
   if (fs.existsSync(TOKEN_PATH)) {
-    const token = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
+    return { source: 'token_file', token: JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8')) };
+  }
+  return { source: 'none', token: null };
+}
+
+async function getAuthenticatedClient() {
+  const credentials = (OAUTH_CLIENT_ID && OAUTH_CLIENT_SECRET && OAUTH_REDIRECT_URI)
+    ? { web: { client_id: OAUTH_CLIENT_ID, client_secret: OAUTH_CLIENT_SECRET, redirect_uris: [OAUTH_REDIRECT_URI] } }
+    : loadCredentials();
+  const oAuth2Client = buildOAuthClient(credentials);
+  const tokenState = loadTokenState();
+
+  if (tokenState.token) {
+    const token = tokenState.token;
+    if (!token.refresh_token && OAUTH_REFRESH_TOKEN) {
+      token.refresh_token = OAUTH_REFRESH_TOKEN;
+    }
     oAuth2Client.setCredentials(token);
 
     // Refresh token proactively if it will expire within 5 minutes
@@ -94,8 +133,9 @@ async function getAuthenticatedClient() {
     if (Date.now() > expiryDate - 5 * 60 * 1000) {
       try {
         const { credentials: refreshed } = await oAuth2Client.refreshAccessToken();
-        oAuth2Client.setCredentials(refreshed);
-        saveToken(refreshed);
+        const nextToken = { ...token, ...refreshed };
+        oAuth2Client.setCredentials(nextToken);
+        saveToken(nextToken);
       } catch (err) {
         console.warn('[gmail-intake] Token refresh failed, re-authenticating:', err.message);
         return interactiveAuth(oAuth2Client);
@@ -105,18 +145,28 @@ async function getAuthenticatedClient() {
     return oAuth2Client;
   }
 
+  if (OAUTH_CLIENT_ID && OAUTH_CLIENT_SECRET && OAUTH_REDIRECT_URI) {
+    throw new Error(
+      'No Gmail token found. Connect Gmail via /api/gmail/oauth/connect and ensure GMAIL_TOKEN_PATH or GMAIL_OAUTH_REFRESH_TOKEN is set.'
+    );
+  }
   return interactiveAuth(oAuth2Client);
 }
 
 function saveToken(token) {
   const dir = path.dirname(TOKEN_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(TOKEN_PATH, JSON.stringify(token));
+  fs.writeFileSync(TOKEN_PATH, JSON.stringify(token, null, 2));
   console.log(`[gmail-intake] Token saved to ${TOKEN_PATH}`);
 }
 
 async function interactiveAuth(oAuth2Client) {
-  const authUrl = oAuth2Client.generateAuthUrl({ access_type: 'offline', scope: SCOPES });
+  const authUrl = oAuth2Client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: SCOPES,
+    ...(INBOX_USER && INBOX_USER !== 'me' ? { login_hint: INBOX_USER } : {})
+  });
   console.log('\n[gmail-intake] Authorize this app by visiting:\n', authUrl, '\n');
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -148,6 +198,26 @@ function saveProcessedIds(ids) {
   const dir = path.dirname(PROCESSED_IDS_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(PROCESSED_IDS_PATH, JSON.stringify([...ids]));
+}
+
+function readSyncState() {
+  if (!fs.existsSync(SYNC_STATE_PATH)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(SYNC_STATE_PATH, 'utf8'));
+  } catch (_err) {
+    return {};
+  }
+}
+
+function writeSyncState(patch = {}) {
+  const dir = path.dirname(SYNC_STATE_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const next = {
+    ...readSyncState(),
+    ...patch,
+    updatedAt: new Date().toISOString()
+  };
+  fs.writeFileSync(SYNC_STATE_PATH, JSON.stringify(next, null, 2));
 }
 
 // ─── Candidate matching strategy (C) ─────────────────────────────────────────
@@ -324,11 +394,38 @@ async function createCandidate(data) {
 
 // ─── Gmail processing ─────────────────────────────────────────────────────────
 
-async function processEmail(gmail, message, processedIds) {
+async function ensureLabel(gmail, userId, labelName) {
+  if (!labelName) return '';
+  const labels = await gmail.users.labels.list({ userId });
+  const existing = (labels.data.labels || []).find((label) => label.name === labelName);
+  if (existing) return existing.id;
+  const created = await gmail.users.labels.create({
+    userId,
+    requestBody: {
+      name: labelName,
+      labelListVisibility: 'labelShow',
+      messageListVisibility: 'show'
+    }
+  });
+  return created.data.id || '';
+}
+
+async function markMessageProcessed(gmail, userId, messageId, processedLabelId) {
+  if (!processedLabelId) return;
+  await gmail.users.messages.modify({
+    userId,
+    id: messageId,
+    requestBody: {
+      addLabelIds: [processedLabelId]
+    }
+  });
+}
+
+async function processEmail(gmail, userId, message, processedIds, processedLabelId) {
   const msgId = message.id;
   if (processedIds.has(msgId)) return;
 
-  const full = await gmail.users.messages.get({ userId: 'me', id: msgId, format: 'full' });
+  const full = await gmail.users.messages.get({ userId, id: msgId, format: 'full' });
   const headers = full.data.payload.headers || [];
   const subject = (headers.find((h) => h.name.toLowerCase() === 'subject') || {}).value || '';
   const from = (headers.find((h) => h.name.toLowerCase() === 'from') || {}).value || '';
@@ -351,8 +448,9 @@ async function processEmail(gmail, message, processedIds) {
   if (!resolution) {
     // Ambiguous or unresolvable — already logged in resolveCandidate
     processedIds.add(msgId);
-    saveProcessedIds(processedIds);
-    return;
+      saveProcessedIds(processedIds);
+      await markMessageProcessed(gmail, userId, msgId, processedLabelId).catch(() => {});
+      return;
   }
 
   let candidate;
@@ -383,6 +481,7 @@ async function processEmail(gmail, message, processedIds) {
     console.log(`[gmail-intake] No attachments in message ${msgId}. Skipping document update.`);
     processedIds.add(msgId);
     saveProcessedIds(processedIds);
+    await markMessageProcessed(gmail, userId, msgId, processedLabelId).catch(() => {});
     return;
   }
 
@@ -398,7 +497,7 @@ async function processEmail(gmail, message, processedIds) {
     try {
       if (part.body.attachmentId) {
         const att = await gmail.users.messages.attachments.get({
-          userId: 'me',
+          userId,
           messageId: msgId,
           id: part.body.attachmentId
         });
@@ -453,6 +552,7 @@ async function processEmail(gmail, message, processedIds) {
 
   processedIds.add(msgId);
   saveProcessedIds(processedIds);
+  await markMessageProcessed(gmail, userId, msgId, processedLabelId).catch(() => {});
 }
 
 function flattenParts(payload) {
@@ -473,16 +573,38 @@ function flattenParts(payload) {
 async function run() {
   console.log('[gmail-intake] Starting Gmail OAuth intake worker');
   console.log(`[gmail-intake] Query: "${POLL_QUERY}"`);
+  console.log(`[gmail-intake] Inbox user: "${INBOX_USER}"`);
 
   const auth = await getAuthenticatedClient();
   const gmail = google.gmail({ version: 'v1', auth });
+  const userId = INBOX_USER || 'me';
+  let connectedInbox = '';
+  try {
+    const profile = await gmail.users.getProfile({ userId });
+    connectedInbox = profile.data.emailAddress || '';
+    if (INBOX_USER && INBOX_USER !== 'me' && connectedInbox && connectedInbox.toLowerCase() !== INBOX_USER.toLowerCase()) {
+      console.warn(`[gmail-intake] Configured inbox "${INBOX_USER}" does not match connected Gmail account "${connectedInbox}"`);
+    }
+  } catch (error) {
+    console.warn('[gmail-intake] Unable to read Gmail profile:', error.message);
+  }
+
+  const startedAt = new Date().toISOString();
+  writeSyncState({ lastStartedAt: startedAt, lastError: '' });
 
   const processedIds = loadProcessedIds();
+  const processedLabelId = await ensureLabel(gmail, userId, PROCESSED_LABEL_NAME).catch((error) => {
+    console.warn(`[gmail-intake] Failed to ensure processed label "${PROCESSED_LABEL_NAME}": ${error.message}`);
+    return '';
+  });
+  const effectiveQuery = PROCESSED_LABEL_NAME
+    ? `${POLL_QUERY} -label:"${PROCESSED_LABEL_NAME.replace(/"/g, '\\"')}"`
+    : POLL_QUERY;
 
   const listRes = await gmail.users.messages.list({
-    userId: 'me',
-    q: POLL_QUERY,
-    maxResults: 50
+    userId,
+    q: effectiveQuery,
+    maxResults: POLL_MAX_RESULTS
   });
 
   const messages = (listRes.data.messages || []);
@@ -494,12 +616,21 @@ async function run() {
 
   for (const message of unprocessed) {
     try {
-      await processEmail(gmail, message, processedIds);
+      await processEmail(gmail, userId, message, processedIds, processedLabelId);
     } catch (err) {
       console.error(`[gmail-intake] Error processing message ${message.id}:`, err.message);
     }
   }
 
+  writeSyncState({
+    lastCompletedAt: new Date().toISOString(),
+    connectedInbox,
+    configuredInbox: INBOX_USER,
+    query: effectiveQuery,
+    matchedMessages: messages.length,
+    processedMessages: unprocessed.length,
+    lastError: ''
+  });
   console.log('[gmail-intake] Run complete');
 }
 
@@ -518,6 +649,10 @@ async function main() {
 
 if (require.main === module) {
   main().catch((err) => {
+    writeSyncState({
+      lastError: err.message,
+      lastFailedAt: new Date().toISOString()
+    });
     console.error('[gmail-intake] Fatal error:', err.message);
     process.exit(1);
   });

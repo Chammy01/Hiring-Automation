@@ -658,6 +658,11 @@ function canEditOutboundMessages() {
   return ['admin', 'developer', 'hr'].includes(role);
 }
 
+function canManageGmailIntake() {
+  const role = String((currentUser && currentUser.role) || '').toLowerCase();
+  return ['admin', 'developer'].includes(role);
+}
+
 async function openInterviewModal(candidateId) {
   await ensureSettingsLoaded();
   pendingInterviewId = candidateId;
@@ -1747,6 +1752,47 @@ function applySettingsToForm(s) {
   get('s-dataRetentionDays').value = s.dataRetentionDays ?? 365;
 }
 
+function renderGmailIntakeStatus(status = {}) {
+  const container = document.getElementById('gmail-intake-status');
+  if (!container) return;
+  const connected = Boolean(status.connected);
+  const publicInbound = status.publicInboundMailbox || '—';
+  const configured = status.configuredInbox || '—';
+  const connectedInbox = status.connectedInbox || '—';
+  const lastSync = status.lastSyncAt ? formatDate(status.lastSyncAt) : '—';
+  const warning = status.lastSyncError
+    ? `<br><span style="color:var(--danger);font-size:11px">${esc(status.lastSyncError)}</span>`
+    : '';
+  container.innerHTML = `
+    <div class="integration-info">
+      <div class="integration-name">Gmail intake inbox</div>
+      <div class="integration-meta">
+        ${integrationBadge(connected ? 'connected' : (status.oauthConfigured ? 'configured' : 'disconnected'))}
+        <br>Public inbound mailbox: <strong>${esc(publicInbound)}</strong>
+        <br>Configured Gmail inbox: <strong>${esc(configured)}</strong>
+        <br>Connected Gmail account: <strong>${esc(connectedInbox)}</strong>
+        <br>Last sync: ${esc(lastSync)}
+        ${warning}
+      </div>
+    </div>
+  `;
+  const canManage = canManageGmailIntake();
+  const connectBtn = document.getElementById('gmail-connect-btn');
+  const disconnectBtn = document.getElementById('gmail-disconnect-btn');
+  if (connectBtn) connectBtn.hidden = !canManage;
+  if (disconnectBtn) disconnectBtn.hidden = !canManage;
+  if (disconnectBtn) disconnectBtn.disabled = !connected;
+}
+
+async function loadGmailIntakeStatus() {
+  try {
+    const status = await api('/api/gmail/intake/status');
+    renderGmailIntakeStatus(status);
+  } catch (err) {
+    renderGmailIntakeStatus({ lastSyncError: err.message, oauthConfigured: false });
+  }
+}
+
 function updateMessageTemplateEditability() {
   const isEditable = canEditOutboundMessages();
   const templateFields = [
@@ -1795,6 +1841,7 @@ async function loadSettingsPage() {
     currentSettings = await api('/api/settings');
     applySettingsToForm(currentSettings);
     updateMessageTemplateEditability();
+    await loadGmailIntakeStatus();
   } catch (err) {
     toast(`Failed to load settings: ${err.message}`, 'error', 0);
   }
@@ -1824,6 +1871,24 @@ document.getElementById('settings-reset').addEventListener('click', () => {
   if (currentSettings) {
     applySettingsToForm(currentSettings);
     toast('Reset to last saved values', 'info');
+  }
+});
+
+document.getElementById('gmail-connect-btn').addEventListener('click', () => {
+  window.location.href = '/api/gmail/oauth/connect';
+});
+
+document.getElementById('gmail-disconnect-btn').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    await api('/api/gmail/oauth/disconnect', { method: 'POST' });
+    toast('Gmail intake disconnected', 'success');
+    await loadGmailIntakeStatus();
+  } catch (err) {
+    toast(`Failed to disconnect Gmail: ${err.message}`, 'error', 0);
+  } finally {
+    btn.disabled = false;
   }
 });
 

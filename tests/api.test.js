@@ -214,6 +214,33 @@ test('settings PUT rejects editor updates to outbound message templates', async 
   assert.equal(res.status, 403);
 });
 
+test('gmail intake status endpoint reports configured/public inbox info', async () => {
+  const settingsRes = await hr(request(app).put('/api/settings')).send({
+    mailboxAddress: 'public-inbox@example.com'
+  });
+  assert.equal(settingsRes.status, 200);
+
+  const status = await hr(request(app).get('/api/gmail/intake/status'));
+  assert.equal(status.status, 200);
+  assert.equal(status.body.publicInboundMailbox, 'public-inbox@example.com');
+  assert.equal(typeof status.body.configuredInbox, 'string');
+  assert.equal(typeof status.body.connected, 'boolean');
+});
+
+test('gmail connect/disconnect endpoints are restricted to admin/developer', async () => {
+  const connectByHr = await hr(request(app).get('/api/gmail/oauth/connect'));
+  assert.equal(connectByHr.status, 403);
+
+  const disconnectByHr = await hr(request(app).post('/api/gmail/oauth/disconnect'));
+  assert.equal(disconnectByHr.status, 403);
+});
+
+test('gmail connect endpoint returns config error when oauth env is missing', async () => {
+  const connect = await developer(request(app).get('/api/gmail/oauth/connect'));
+  assert.equal(connect.status, 400);
+  assert.match(connect.body.error, /Gmail OAuth is not configured/i);
+});
+
 test('follow-up email uses message template from settings with placeholder replacement', async () => {
   await hr(request(app).put('/api/settings')).send({
     followUpMessage: 'Hello {{candidateName}} for {{position}}. Missing:\n{{missingDocuments}}\nDeadline: {{deadline}}'
