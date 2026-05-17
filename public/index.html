@@ -427,6 +427,20 @@
                 <span class="form-hint">Address where candidate applications are received.</span>
               </div>
               <div class="form-field">
+                <label>Gmail Intake Connection</label>
+                <div id="gmail-intake-status" class="integration-item">
+                  <div class="integration-info">
+                    <div class="integration-name">Gmail intake inbox</div>
+                    <div class="integration-meta">Loading…</div>
+                  </div>
+                </div>
+                <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
+                  <button type="button" class="btn btn-secondary" id="gmail-connect-btn">Connect Gmail</button>
+                  <button type="button" class="btn btn-ghost" id="gmail-disconnect-btn">Disconnect Gmail</button>
+                </div>
+                <span class="form-hint">Public inbound mailbox can be changed by HR. Gmail intake uses the connected inbox shown above.</span>
+              </div>
+              <div class="form-field">
                 <label for="s-hiringManagerName">Hiring Manager Name / Title</label>
                 <input id="s-hiringManagerName" name="hiringManagerName" type="text" placeholder="Jane Doe, HR Officer" />
               </div>

@@ -1,9 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { z } = require('zod');
+const { google } = require('googleapis');
 const { config } = require('./config');
 const { requirePermission } = require('./security');
 const {
@@ -281,6 +283,90 @@ const sensitiveActionLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
 
 function secureWrite(permission) {
   return [sensitiveActionLimiter, requireApiKey, requireCsrfForJwt, requirePermission(permission)];
+}
+
+function requireRoles(allowedRoles = []) {
+  const allowed = new Set(allowedRoles.map((role) => String(role).toLowerCase()));
+  return (req, res, next) => {
+    const role = String((req.auth && req.auth.role) || '').toLowerCase();
+    if (!allowed.has(role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    return next();
+  };
+}
+
+const requireGmailIntakeAdmin = requireRoles(['admin', 'developer']);
+
+function getGmailOauthClient() {
+  const clientId = String(process.env.GMAIL_OAUTH_CLIENT_ID || '').trim();
+  const clientSecret = String(process.env.GMAIL_OAUTH_CLIENT_SECRET || '').trim();
+  const redirectUri = String(process.env.GMAIL_OAUTH_REDIRECT_URI || '').trim();
+  if (!clientId || !clientSecret || !redirectUri) return null;
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+}
+
+function getGmailTokenPath() {
+  return String(process.env.GMAIL_TOKEN_PATH || 'data/gmail-token.json');
+}
+
+function getGmailSyncStatePath() {
+  return String(process.env.GMAIL_SYNC_STATE_PATH || 'data/gmail-intake-state.json');
+}
+
+function readJsonIfExists(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (_err) {
+    return null;
+  }
+}
+
+function writeJson(filePath, value) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
+}
+
+function readGmailToken() {
+  const refresh = String(process.env.GMAIL_OAUTH_REFRESH_TOKEN || '').trim();
+  if (refresh) {
+    return { source: 'env_refresh_token', token: { refresh_token: refresh } };
+  }
+  const rawJson = String(process.env.GMAIL_TOKEN_JSON || '').trim();
+  if (rawJson) {
+    try {
+      return { source: 'env_token_json', token: JSON.parse(rawJson) };
+    } catch (_err) {
+      return { source: 'env_token_json_invalid', token: null };
+    }
+  }
+  const tokenPath = getGmailTokenPath();
+  const token = readJsonIfExists(tokenPath);
+  if (token) return { source: 'token_file', token };
+  return { source: 'none', token: null };
+}
+
+function saveGmailToken(token, existingToken = null) {
+  const next = { ...(existingToken || {}), ...(token || {}) };
+  if (!next.refresh_token && existingToken && existingToken.refresh_token) {
+    next.refresh_token = existingToken.refresh_token;
+  }
+  writeJson(getGmailTokenPath(), next);
+  return next;
+}
+
+function updateGmailSyncState(patch = {}) {
+  const statePath = getGmailSyncStatePath();
+  const current = readJsonIfExists(statePath) || {};
+  const next = {
+    ...current,
+    ...patch,
+    updatedAt: new Date().toISOString()
+  };
+  writeJson(statePath, next);
+  return next;
 }
 
 const intakeSchema = z.object({
@@ -985,6 +1071,138 @@ app.put('/api/settings', secureWrite('write:candidates'), (req, res) => {
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
+});
+
+app.get('/api/gmail/intake/status', secureWrite('read:dashboard'), async (_req, res) => {
+  const oauthClient = getGmailOauthClient();
+  const tokenState = readGmailToken();
+  const token = tokenState.token;
+  const inboxUser = String(process.env.GMAIL_INBOX_USER || '').trim();
+  const publicInboundMailbox = String((getAppSettings() || {}).mailboxAddress || '').trim();
+  const syncState = readJsonIfExists(getGmailSyncStatePath()) || {};
+  const response = {
+    oauthConfigured: Boolean(oauthClient),
+    configuredInbox: inboxUser,
+    publicInboundMailbox,
+    tokenSource: tokenState.source,
+    connected: Boolean(token && token.refresh_token),
+    connectedInbox: '',
+    hasRefreshToken: Boolean(token && token.refresh_token),
+    pollQuery: String(process.env.GMAIL_POLL_QUERY || 'subject:(Application for) has:attachment'),
+    pollIntervalMs: Number(process.env.GMAIL_POLL_INTERVAL_MS || 60_000),
+    processedLabel: String(process.env.GMAIL_PROCESSED_LABEL || '').trim(),
+    lastConnectedAt: syncState.lastConnectedAt || '',
+    lastSyncAt: syncState.lastCompletedAt || '',
+    lastSyncError: syncState.lastError || ''
+  };
+
+  if (!oauthClient || !token) {
+    return res.json(response);
+  }
+
+  try {
+    oauthClient.setCredentials(token);
+    const gmail = google.gmail({ version: 'v1', auth: oauthClient });
+    const profile = await gmail.users.getProfile({ userId: inboxUser || 'me' });
+    response.connectedInbox = profile.data.emailAddress || '';
+    response.connected = Boolean(response.connected && response.connectedInbox);
+    if (inboxUser && response.connectedInbox && inboxUser.toLowerCase() !== response.connectedInbox.toLowerCase()) {
+      response.connected = false;
+      response.lastSyncError = response.lastSyncError || `Connected account (${response.connectedInbox}) does not match configured inbox (${inboxUser}).`;
+    }
+  } catch (error) {
+    response.connected = false;
+    response.lastSyncError = response.lastSyncError || error.message;
+  }
+  return res.json(response);
+});
+
+app.get('/api/gmail/oauth/connect', secureWrite('write:candidates'), requireGmailIntakeAdmin, (req, res) => {
+  const oauthClient = getGmailOauthClient();
+  if (!oauthClient) {
+    return res.status(400).json({
+      error: 'Gmail OAuth is not configured. Set GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, and GMAIL_OAUTH_REDIRECT_URI.'
+    });
+  }
+  const inboxUser = String(process.env.GMAIL_INBOX_USER || '').trim();
+  const state = crypto.randomUUID();
+  res.cookie('gmail_oauth_state', state, {
+    httpOnly: true,
+    secure: buildAuthCookieOptions().secure,
+    sameSite: 'strict',
+    maxAge: 10 * 60 * 1000,
+    path: '/'
+  });
+
+  const authUrl = oauthClient.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: ['https://www.googleapis.com/auth/gmail.modify'],
+    state,
+    ...(inboxUser ? { login_hint: inboxUser } : {})
+  });
+  return res.redirect(authUrl);
+});
+
+app.get('/api/gmail/oauth/callback', secureWrite('write:candidates'), requireGmailIntakeAdmin, async (req, res) => {
+  const oauthClient = getGmailOauthClient();
+  if (!oauthClient) {
+    return res.status(400).json({ error: 'Gmail OAuth is not configured.' });
+  }
+  const state = String(req.query.state || '').trim();
+  const expectedState = String((req.cookies && req.cookies.gmail_oauth_state) || '').trim();
+  if (!state || !expectedState || state !== expectedState) {
+    return res.status(400).json({ error: 'Invalid OAuth state.' });
+  }
+  const code = String(req.query.code || '').trim();
+  if (!code) {
+    return res.status(400).json({ error: 'Missing authorization code.' });
+  }
+
+  try {
+    const previous = readGmailToken().token;
+    const { tokens } = await oauthClient.getToken(code);
+    const saved = saveGmailToken(tokens, previous);
+    oauthClient.setCredentials(saved);
+    const gmail = google.gmail({ version: 'v1', auth: oauthClient });
+    const profile = await gmail.users.getProfile({ userId: 'me' });
+    updateGmailSyncState({
+      lastConnectedAt: new Date().toISOString(),
+      connectedInbox: profile.data.emailAddress || '',
+      lastError: ''
+    });
+    res.clearCookie('gmail_oauth_state', { path: '/' });
+    return res.redirect('/');
+  } catch (error) {
+    updateGmailSyncState({
+      lastError: `OAuth callback failed: ${error.message}`
+    });
+    return res.status(500).json({ error: `OAuth callback failed: ${error.message}` });
+  }
+});
+
+app.post('/api/gmail/oauth/disconnect', secureWrite('write:candidates'), requireGmailIntakeAdmin, async (_req, res) => {
+  const oauthClient = getGmailOauthClient();
+  const tokenPath = getGmailTokenPath();
+  const tokenState = readGmailToken();
+  const token = tokenState.token;
+  try {
+    if (oauthClient && token && token.refresh_token) {
+      await oauthClient.revokeToken(token.refresh_token).catch(() => {});
+    }
+  } catch (_err) {
+    // ignore revocation failures, still clear local state
+  }
+  if (fs.existsSync(tokenPath)) {
+    fs.unlinkSync(tokenPath);
+  }
+  updateGmailSyncState({
+    connectedInbox: '',
+    lastConnectedAt: '',
+    lastError: '',
+    disconnectedAt: new Date().toISOString()
+  });
+  return res.json({ disconnected: true });
 });
 
 // ─── Gmail outbound dispatch endpoints ───────────────────────────────────────
