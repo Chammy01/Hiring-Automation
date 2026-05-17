@@ -1073,7 +1073,7 @@ app.put('/api/settings', secureWrite('write:candidates'), (req, res) => {
   }
 });
 
-app.get('/api/gmail/intake/status', secure('read:dashboard'), async (_req, res) => {
+app.get('/api/gmail/intake/status', secureWrite('read:dashboard'), async (_req, res) => {
   const oauthClient = getGmailOauthClient();
   const tokenState = readGmailToken();
   const token = tokenState.token;
@@ -1117,7 +1117,7 @@ app.get('/api/gmail/intake/status', secure('read:dashboard'), async (_req, res) 
   return res.json(response);
 });
 
-app.get('/api/gmail/oauth/connect', secure('write:candidates'), requireGmailIntakeAdmin, (req, res) => {
+app.get('/api/gmail/oauth/connect', secureWrite('write:candidates'), requireGmailIntakeAdmin, (req, res) => {
   const oauthClient = getGmailOauthClient();
   if (!oauthClient) {
     return res.status(400).json({
@@ -1144,7 +1144,7 @@ app.get('/api/gmail/oauth/connect', secure('write:candidates'), requireGmailInta
   return res.redirect(authUrl);
 });
 
-app.get('/api/gmail/oauth/callback', secure('write:candidates'), requireGmailIntakeAdmin, async (req, res) => {
+app.get('/api/gmail/oauth/callback', secureWrite('write:candidates'), requireGmailIntakeAdmin, async (req, res) => {
   const oauthClient = getGmailOauthClient();
   if (!oauthClient) {
     return res.status(400).json({ error: 'Gmail OAuth is not configured.' });

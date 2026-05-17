@@ -220,6 +220,10 @@ function writeSyncState(patch = {}) {
   fs.writeFileSync(SYNC_STATE_PATH, JSON.stringify(next, null, 2));
 }
 
+function escapeGmailQueryLiteral(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 // ─── Candidate matching strategy (C) ─────────────────────────────────────────
 
 /**
@@ -598,7 +602,7 @@ async function run() {
     return '';
   });
   const effectiveQuery = PROCESSED_LABEL_NAME
-    ? `${POLL_QUERY} -label:"${PROCESSED_LABEL_NAME.replace(/"/g, '\\"')}"`
+    ? `${POLL_QUERY} -label:"${escapeGmailQueryLiteral(PROCESSED_LABEL_NAME)}"`
     : POLL_QUERY;
 
   const listRes = await gmail.users.messages.list({
